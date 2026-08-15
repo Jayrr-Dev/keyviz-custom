@@ -30,7 +30,7 @@ export const MouseSettings = () => {
                     <HugeiconsIcon icon={CursorMagicSelection03FreeIcons} size="1em" /> Show Clicks
                 </ItemTitle>
                 <ItemDescription>
-                    Animate a ring upon mouse press
+                    Burst on a short click. Ring while you hold or drag.
                 </ItemDescription>
             </ItemContent>
             <ItemActions>

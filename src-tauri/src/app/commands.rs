@@ -1,8 +1,19 @@
 use std::sync::Mutex;
 
-use tauri::{Manager, PhysicalPosition, PhysicalSize};
+use serde::Serialize;
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::app::state::AppState;
+
+/// Key-overlay box inside the spanning visualization window, in physical pixels.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayLayout {
+    pub key_x: i32,
+    pub key_y: i32,
+    pub key_width: u32,
+    pub key_height: u32,
+}
 
 #[tauri::command]
 pub fn log(message: String) {
@@ -16,42 +27,107 @@ pub fn set_toggle_shortcut(app: tauri::AppHandle, shortcut: Vec<String>) {
     app_state.toggle_shortcut = shortcut;
 }
 
+/// Spans the overlay across every display. `monitor_name` only places the keycaps.
 #[tauri::command]
-pub fn set_main_window_monitor(app: tauri::AppHandle, monitor_name: String) {
+pub fn set_main_window_monitor(
+    app: tauri::AppHandle,
+    monitor_name: Option<String>,
+) -> Option<OverlayLayout> {
+    let window = app.get_webview_window("main")?;
     let state = app.state::<Mutex<AppState>>();
     let mut app_state = state.lock().unwrap();
+    spanning_all_monitors(&window, monitor_name.as_deref(), &mut app_state)
+}
 
-    if app_state.monitor_name == Some(monitor_name.clone()) {
-        return;
-    }
+/// Virtual desktop origin and size in the same space as the mouse hook.
+fn reading_virtual_desktop(window: &WebviewWindow) -> Option<(i32, i32, u32, u32)> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetSystemMetrics, SetWindowPos, HWND_TOPMOST, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+            SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE,
+        };
 
-    if let Some(window) = app.get_webview_window("main") {
-        let monitors = window.available_monitors().unwrap_or_default();
-        let target_monitor = monitors.iter().find(|m| m.name() == Some(&monitor_name));
-
-        if let Some(monitor) = target_monitor {
-            let position = monitor.position();
-            let size = monitor.size();
-            let scale = monitor.scale_factor();
-
-            // Update AppState
-            app_state.monitor_name = Some(monitor_name.clone());
-            app_state.monitor_scale = scale;
-            app_state.monitor_position = (position.x, position.y);
-
-            // Update window
-            window
-                .set_position(PhysicalPosition {
-                    x: position.x,
-                    y: position.y,
-                })
-                .unwrap_or(());
-            window
-                .set_size(PhysicalSize {
-                    width: size.width,
-                    height: size.height,
-                })
-                .unwrap_or(());
+        unsafe {
+            let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            let hwnd = HWND(window.hwnd().ok()?.0 as isize);
+            let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+            return Some((x, y, width as u32, height as u32));
         }
     }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let monitors = window.available_monitors().unwrap_or_default();
+        if monitors.is_empty() {
+            return None;
+        }
+        let min_x = monitors.iter().map(|monitor| monitor.position().x).min()?;
+        let min_y = monitors.iter().map(|monitor| monitor.position().y).min()?;
+        let max_x = monitors
+            .iter()
+            .map(|monitor| monitor.position().x + monitor.size().width as i32)
+            .max()?;
+        let max_y = monitors
+            .iter()
+            .map(|monitor| monitor.position().y + monitor.size().height as i32)
+            .max()?;
+        let _ = window.set_position(PhysicalPosition { x: min_x, y: min_y });
+        let _ = window.set_size(PhysicalSize {
+            width: (max_x - min_x) as u32,
+            height: (max_y - min_y) as u32,
+        });
+        Some((
+            min_x,
+            min_y,
+            (max_x - min_x) as u32,
+            (max_y - min_y) as u32,
+        ))
+    }
+}
+
+/// Sizes the main window to the virtual desktop and keeps keycaps on one display.
+pub fn spanning_all_monitors(
+    window: &WebviewWindow,
+    key_monitor_name: Option<&str>,
+    app_state: &mut AppState,
+) -> Option<OverlayLayout> {
+    let monitors = window.available_monitors().unwrap_or_default();
+    if monitors.is_empty() {
+        return None;
+    }
+
+    let (origin_x, origin_y, _width, _height) = reading_virtual_desktop(window)?;
+    app_state.monitor_position = (origin_x, origin_y);
+    app_state.monitor_name = key_monitor_name.map(|name| name.to_string());
+
+    let key_index = key_monitor_name
+        .and_then(|name| {
+            monitors
+                .iter()
+                .position(|monitor| monitor.name().map(|n| n.as_str()) == Some(name))
+        })
+        .or_else(|| {
+            window.primary_monitor().ok().flatten().and_then(|primary| {
+                let primary_name = primary.name().map(|name| name.to_string());
+                monitors
+                    .iter()
+                    .position(|monitor| monitor.name().map(|name| name.to_string()) == primary_name)
+            })
+        })
+        .unwrap_or(0);
+
+    let key_monitor = monitors.get(key_index)?;
+    app_state.monitor_scale = key_monitor.scale_factor();
+
+    Some(OverlayLayout {
+        key_x: key_monitor.position().x - origin_x,
+        key_y: key_monitor.position().y - origin_y,
+        key_width: key_monitor.size().width,
+        key_height: key_monitor.size().height,
+    })
 }

@@ -9,7 +9,7 @@ use tauri::{
 };
 
 mod app;
-use app::commands::{log, set_main_window_monitor, set_toggle_shortcut};
+use app::commands::{log, set_main_window_monitor, set_toggle_shortcut, spanning_all_monitors};
 use app::event::start_listener;
 use app::state::AppState;
 use app::window::config_window;
@@ -25,14 +25,15 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // prepare window
+            let app_handle = app.handle().clone();
+            app.manage(Mutex::new(AppState::new(&app_handle)));
+
             if let Some(window) = app.get_webview_window("main") {
                 config_window(&window);
+                let state = app.state::<Mutex<AppState>>();
+                let mut app_state = state.lock().unwrap();
+                spanning_all_monitors(&window, None, &mut app_state);
             }
-
-            let app_handle = app.handle();
-            // manage app state
-            app.manage(Mutex::new(AppState::new(&app_handle)));
 
             // tray actions
             let toggle_item = MenuItem::with_id(app, "toggle", "Stop", true, None::<&str>)?;

@@ -45,7 +45,7 @@ export const AppearanceSettings = () => {
                         Display
                     </ItemTitle>
                     <ItemDescription>
-                        Change monitor/display for the visualisation.
+                        Keycaps stay on this display. Mouse clicks show on every display.
                     </ItemDescription>
                 </ItemContent>
                 <ItemActions>

@@ -1,133 +1,228 @@
-import { easeInOutExpo } from "@/lib/utils";
+import { complementingHexColor, easeInOutExpo } from "@/lib/utils";
 import { useKeyEvent } from "@/stores/key_event";
 import { useKeyStyle } from "@/stores/key_style";
+import { MouseButton } from "@/types/event";
+import { platform } from "@tauri-apps/plugin-os";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { AnimatingClickBurst } from "./animatingClickBurst";
 import { MouseIndicator } from "./mouse-indicator";
-import { platform } from "@tauri-apps/plugin-os";
 
-const MIN_CLICK_DISPLAY_MS = 200;
+/** Hold longer than this and the click becomes a grab (ring). */
+const SHORT_CLICK_MAX_MS = 180;
+
+/** How long the burst stays visible after a short click. */
+const BURST_DISPLAY_MS = 220;
+
+/** Grab ring diameter relative to the click-line highlight size. */
+const RING_SIZE_RATIO = 0.5;
+
+/** Grab ring stroke relative to ring diameter. */
+const RING_BORDER_RATIO = 0.14;
+
+/** Thin black edge on both sides of the ring stroke. */
+const RING_OUTLINE = "0 0 0 0.5px #000000, inset 0 0 0 0.5px #000000";
+
+/**
+ * Right click uses the opposite hue of the picker color.
+ */
+const pickingHighlightColor = (
+  button: MouseButton | null,
+  baseColor: string,
+) => (button === "Right" ? complementingHexColor(baseColor) : baseColor);
+
 const isMacos = platform() === "macos";
 
+/**
+ * Click highlight overlay: burst on short clicks, ring while grabbing.
+ */
 export const MouseOverlay = () => {
-    const wheel = useKeyEvent(state => state.mouse.wheel);
-    const pressedMouseButton = useKeyEvent(state => state.pressedMouseButton);
-    const style = useKeyStyle(state => state.mouse);
-    const animationDuration = useKeyStyle(state => state.appearance.animationDuration);
+  const wheel = useKeyEvent((state) => state.mouse.wheel);
+  const pressedMouseButton = useKeyEvent((state) => state.pressedMouseButton);
+  const dragging = useKeyEvent((state) => state.mouse.dragging);
+  const style = useKeyStyle((state) => state.mouse);
+  const animationDuration = useKeyStyle(
+    (state) => state.appearance.animationDuration,
+  );
 
-    const [show, setShow] = useState(false);
+  const [showBurst, setShowBurst] = useState(false);
+  const [showRing, setShowRing] = useState(false);
+  const [burstKey, setBurstKey] = useState(0);
+  const [highlightColor, setHighlightColor] = useState(style.color);
+  const [isSwiggly, setIsSwiggly] = useState(false);
 
-    const positionRef = useRef<HTMLDivElement>(null);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const pressTimestampRef = useRef<number | null>(null);
+  const positionRef = useRef<HTMLDivElement>(null);
+  const burstTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isGrabRef = useRef(false);
+  const hasPressCycleRef = useRef(false);
 
-    // Handle minimum display duration for mouse clicks
-    useEffect(() => {
-        if (pressedMouseButton) {
-            // Mouse button pressed - show immediately and record timestamp
-            setShow(true);
-            pressTimestampRef.current = Date.now();
-            // Clear any pending timeout
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-                timeoutRef.current = null;
-            }
-        } else if (show && pressTimestampRef.current) {
-            // Mouse button released - check if minimum duration has passed
-            const elapsed = Date.now() - pressTimestampRef.current;
+  const clearingTimers = () => {
+    if (burstTimeoutRef.current) {
+      clearTimeout(burstTimeoutRef.current);
+      burstTimeoutRef.current = null;
+    }
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+  };
 
-            if (elapsed >= MIN_CLICK_DISPLAY_MS) {
-                // Already displayed long enough - hide immediately
-                setShow(false);
-                pressTimestampRef.current = null;
-            } else {
-                // Need to maintain visibility for remaining time
-                timeoutRef.current = setTimeout(() => {
-                    setShow(false);
-                    pressTimestampRef.current = null;
-                    timeoutRef.current = null;
-                }, MIN_CLICK_DISPLAY_MS - elapsed);
-            }
-        }
+  const startingGrab = () => {
+    isGrabRef.current = true;
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    setShowBurst(false);
+    setShowRing(true);
+  };
 
-        return () => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-        };
-    }, [pressedMouseButton, show]);
+  useEffect(() => {
+    if (pressedMouseButton) {
+      hasPressCycleRef.current = true;
+      clearingTimers();
+      isGrabRef.current = false;
+      setHighlightColor(pickingHighlightColor(pressedMouseButton, style.color));
+      setIsSwiggly(pressedMouseButton === "Right");
+      setShowBurst(false);
+      setShowRing(false);
+      holdTimeoutRef.current = setTimeout(() => {
+        startingGrab();
+      }, SHORT_CLICK_MAX_MS);
+      return;
+    }
 
-    // Subscribe to mouse movement without re-rendering React
-    useEffect(() => {
-        if (!positionRef.current) return;
+    if (!hasPressCycleRef.current) {
+      return;
+    }
 
-        // Zustand subscribe allows us to listen to changes without triggering a component re-render
-        const unsubscribe = useKeyEvent.subscribe((state) => {
-            const el = positionRef.current;
-            if (!el) return;
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
 
-            const shouldUpdatePosition =
-                style.keepHighlight ||
-                state.pressedMouseButton ||
-                style.showIndicator ||
-                style.keepIndicator;
+    if (isGrabRef.current) {
+      setShowRing(false);
+      isGrabRef.current = false;
+      return;
+    }
 
-            if (!shouldUpdatePosition) return;
+    setBurstKey((key) => key + 1);
+    setShowBurst(true);
+    burstTimeoutRef.current = setTimeout(() => {
+      setShowBurst(false);
+      burstTimeoutRef.current = null;
+    }, BURST_DISPLAY_MS);
+  }, [pressedMouseButton]);
 
-            const dpr = isMacos ? 1 : window.devicePixelRatio || 1;
-            el.style.transform =
-                `translate3d(${state.mouse.x / dpr}px, ${state.mouse.y / dpr}px, 0) translate(-50%, -50%)`;
-        });
+  useEffect(() => {
+    if (dragging && pressedMouseButton) {
+      startingGrab();
+    }
+  }, [dragging, pressedMouseButton]);
 
-        return () => unsubscribe();
-    }, [style.showClicks, style.keepHighlight, style.showIndicator, style.keepIndicator]);
+  useEffect(() => {
+    return () => clearingTimers();
+  }, []);
 
-    // Logic to determine if we should render anything at all to keep DOM light
-    const shouldRender = style.showClicks || style.keepHighlight || style.showIndicator || style.keepIndicator;
-    if (!shouldRender) return null;
+  useEffect(() => {
+    if (!positionRef.current) return;
 
+    const unsubscribe = useKeyEvent.subscribe((state) => {
+      const el = positionRef.current;
+      if (!el) return;
 
-    return (
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
-            <div
-                ref={positionRef}
-                className="absolute top-0 left-0 will-change-transform"
-                style={{
-                    width: style.size,
-                    height: style.size,
-                }}
-            >
-                {style.showClicks && (
-                    <motion.div
-                        className="w-full h-full"
-                        initial={false}
-                        animate={{
-                            opacity: show || style.keepHighlight ? 1 : 0,
-                            scale: show ? 0.5 : 1.0,
-                            borderWidth: style.size / 20,
-                        }}
-                        style={{
-                            borderColor: style.color,
-                            borderStyle: "solid",
-                            borderRadius: "50%",
-                        }}
-                        transition={{
-                            duration: animationDuration,
-                            ease: easeInOutExpo,
-                        }}
-                    />
-                )}
+      const shouldUpdatePosition =
+        style.keepHighlight ||
+        state.pressedMouseButton ||
+        state.mouse.dragging ||
+        style.showIndicator ||
+        style.keepIndicator;
 
-                {style.showIndicator &&
-                    <motion.div
-                        className="absolute left-1/2 top-1/2"
-                        animate={{ opacity: show || style.keepIndicator || wheel !== 0 ? 1 : 0 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        <MouseIndicator />
-                    </motion.div>
-                }
-            </div>
-        </div>
-    );
+      if (!shouldUpdatePosition) return;
+
+      const dpr = isMacos ? 1 : window.devicePixelRatio || 1;
+      el.style.transform = `translate3d(${state.mouse.x / dpr}px, ${state.mouse.y / dpr}px, 0) translate(-50%, -50%)`;
+    });
+
+    return () => unsubscribe();
+  }, [
+    style.showClicks,
+    style.keepHighlight,
+    style.showIndicator,
+    style.keepIndicator,
+  ]);
+
+  const shouldRender =
+    style.showClicks ||
+    style.keepHighlight ||
+    style.showIndicator ||
+    style.keepIndicator;
+  if (!shouldRender) return null;
+
+  const ringSize = style.size * RING_SIZE_RATIO;
+  const ringVisible = showRing || style.keepHighlight;
+  const indicatorVisible =
+    showBurst || showRing || style.keepIndicator || wheel !== 0;
+
+  return (
+    <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
+      <div
+        ref={positionRef}
+        className="absolute top-0 left-0 will-change-transform"
+        style={{
+          width: style.size,
+          height: style.size,
+        }}
+      >
+        {style.showClicks && (
+          <>
+            <AnimatingClickBurst
+              key={burstKey}
+              show={showBurst}
+              keepHighlight={false}
+              size={style.size}
+              color={highlightColor}
+              duration={animationDuration}
+              swiggly={isSwiggly}
+            />
+            <motion.div
+              className="absolute left-1/2 top-1/2"
+              initial={false}
+              animate={{
+                opacity: ringVisible ? 1 : 0,
+                scale: showRing ? 0.85 : 1,
+                borderWidth: ringSize * RING_BORDER_RATIO,
+                x: "-50%",
+                y: "-50%",
+              }}
+              style={{
+                width: ringSize,
+                height: ringSize,
+                borderColor: highlightColor,
+                borderStyle: "solid",
+                borderRadius: "50%",
+                boxShadow: RING_OUTLINE,
+              }}
+              transition={{
+                duration: animationDuration,
+                ease: easeInOutExpo,
+              }}
+            />
+          </>
+        )}
+
+        {style.showIndicator && (
+          <motion.div
+            className="absolute left-1/2 top-1/2"
+            animate={{ opacity: indicatorVisible ? 1 : 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <MouseIndicator />
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
 };

@@ -105,22 +105,10 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                     pressed: false,
                 }),
                 EventType::MouseMove { x, y } => {
-                    // Convert Physical -> Logical
-                    #[cfg(target_os = "macos")]
-                    let (logical_x, logical_y) = (
-                        x - app_state.monitor_position.0 as f64,
-                        y - app_state.monitor_position.1 as f64,
-                    );
-
-                    #[cfg(not(target_os = "macos"))]
-                    let (logical_x, logical_y) = {
-                        let (offset_x, offset_y) = app_state.monitor_position;
-                        (x - offset_x as f64, y - offset_y as f64)
-                    };
-
+                    let (offset_x, offset_y) = app_state.monitor_position;
                     Some(InputEvent::MouseMoveEvent {
-                        x: logical_x,
-                        y: logical_y,
+                        x: x - offset_x as f64,
+                        y: y - offset_y as f64,
                     })
                 }
                 EventType::Wheel { delta_x, delta_y } => {
