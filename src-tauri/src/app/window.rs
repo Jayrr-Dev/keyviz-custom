@@ -84,6 +84,7 @@ pub fn syncing_draw_mode(app: &AppHandle) {
         if !app_state.draw_mode {
             app_state.toolbar_rect = None;
             app_state.cursor_over_toolbar = false;
+            app_state.draw_typing = false;
         }
         if let Some(item) = &app_state.draw_tray_item {
             let label = if app_state.draw_mode {
@@ -165,12 +166,20 @@ pub fn restarting_app() {
 
     #[cfg(target_os = "windows")]
     {
-        let command = format!(
-            "ping 127.0.0.1 -n 2 >nul & start \"\" \"{}\"",
-            exe.display()
-        );
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+
+        let raw = exe.to_string_lossy();
+        let path = raw.strip_prefix(r"\\?\").unwrap_or(&raw).replace('"', "");
+        // raw_arg keeps the line verbatim. Normal args escape quotes as \" ,
+        // which cmd.exe reads as a literal backslash instead of a quote.
         let _ = std::process::Command::new("cmd")
-            .args(["/C", &command])
+            .raw_arg(format!(
+                "/C ping 127.0.0.1 -n 2 >nul & start \"\" \"{path}\""
+            ))
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
             .spawn();
     }
 

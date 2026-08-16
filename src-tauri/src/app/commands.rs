@@ -80,7 +80,8 @@ pub fn set_draw_click_mode(app: tauri::AppHandle, enabled: bool) {
     crate::app::window::syncing_draw_mode(&app);
 }
 
-/// Escape exits draw mode unless a Type field is open.
+/// Marks a Type field open so Escape cancels text instead of leaving draw mode.
+/// Characters come from the global hook. The overlay stays unfocusable.
 #[tauri::command]
 pub fn set_draw_typing(app: tauri::AppHandle, enabled: bool) {
     let state = app.state::<Mutex<AppState>>();

@@ -7,7 +7,7 @@ import {
 } from "@/stores/draw_mode";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { KeyboardEvent, PointerEvent, useEffect, useRef, useState } from "react";
+import { PointerEvent, useEffect, useRef, useState } from "react";
 
 const ERASE_BUTTON = 2;
 const ERASE_RADIUS_PADDING = 10;
@@ -29,6 +29,7 @@ const TEXT_LINE_HEIGHT = 1.25;
 const TEXT_CHAR_WIDTH = 0.62;
 const TEXT_INPUT_MIN_WIDTH = 160;
 const TEXT_INPUT_PADDING = 4;
+const DRAW_TYPE_EVENT = "draw-type-input";
 
 interface DrawPoint {
   x: number;
@@ -48,6 +49,11 @@ interface TypeDraft {
   x: number;
   y: number;
   text: string;
+}
+
+interface TypedInput {
+  action: "char" | "backspace" | "enter" | "escape" | "newline";
+  value: string;
 }
 
 interface EraseTrailPoint extends DrawPoint {
@@ -437,7 +443,8 @@ export const RenderingDrawCanvas = () => {
   const clickMode = useDrawMode((state) => state.clickMode);
   const drawTool = useDrawMode((state) => state.drawTool);
   const [typeDraft, setTypeDraft] = useState<TypeDraft | null>(null);
-  const typeInputRef = useRef<HTMLTextAreaElement>(null);
+  const typeDraftRef = useRef<TypeDraft | null>(null);
+  const wasEnabledRef = useRef(enabled);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<DrawStroke[]>([]);
   const currentRef = useRef<DrawStroke | null>(null);
@@ -523,6 +530,7 @@ export const RenderingDrawCanvas = () => {
       strokesRef.current = [];
       currentRef.current = null;
       eraseTrailRef.current = [];
+      typeDraftRef.current = null;
       setTypeDraft(null);
       invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
       paintingCanvas();
@@ -538,10 +546,13 @@ export const RenderingDrawCanvas = () => {
   }, []);
 
   useEffect(() => {
-    if (enabled) return;
+    const wasEnabled = wasEnabledRef.current;
+    wasEnabledRef.current = enabled;
+    if (enabled || !wasEnabled) return;
     strokesRef.current = [];
     currentRef.current = null;
     eraseTrailRef.current = [];
+    typeDraftRef.current = null;
     setTypeDraft(null);
     invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
     if (eraseFrameRef.current != null) {
@@ -589,10 +600,15 @@ export const RenderingDrawCanvas = () => {
    * Writes the open Type field onto the canvas.
    */
   const committingTypeDraft = (draft: TypeDraft | null) => {
-    if (!draft) return;
+    if (!draft) {
+      typeDraftRef.current = null;
+      setTypeDraft(null);
+      return;
+    }
     const text = draft.text.replace(/\s+$/g, "");
-    invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
+    typeDraftRef.current = null;
     setTypeDraft(null);
+    invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
     if (!text) return;
     strokesRef.current = [
       ...strokesRef.current,
@@ -615,26 +631,65 @@ export const RenderingDrawCanvas = () => {
    * Opens a Type field at the click. Escape cancels; Enter commits.
    */
   const startingTypeDraft = (point: DrawPoint) => {
-    committingTypeDraft(typeDraft);
-    setTypeDraft({ x: point.x, y: point.y, text: "" });
+    committingTypeDraft(typeDraftRef.current);
+    const next = { x: point.x, y: point.y, text: "" };
+    typeDraftRef.current = next;
+    setTypeDraft(next);
     invoke("set_draw_typing", { enabled: true }).catch(() => undefined);
   };
 
   useEffect(() => {
-    if (!typeDraft) return;
-    typeInputRef.current?.focus();
-  }, [typeDraft]);
+    if (drawTool === "type" && !clickMode) return;
+    if (!typeDraftRef.current) return;
+    committingTypeDraft(typeDraftRef.current);
+  }, [drawTool, clickMode]);
+
+  /**
+   * Overlay stays unfocusable. Type characters arrive from the global hook.
+   */
+  const applyingTypedInput = (input: TypedInput) => {
+    const draft = typeDraftRef.current;
+    if (!draft) return;
+    if (input.action === "escape") {
+      typeDraftRef.current = null;
+      setTypeDraft(null);
+      invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
+      paintingCanvas();
+      return;
+    }
+    if (input.action === "enter") {
+      committingTypeDraft(draft);
+      return;
+    }
+    const nextText =
+      input.action === "backspace"
+        ? draft.text.slice(0, -1)
+        : input.action === "newline"
+          ? `${draft.text}\n`
+          : `${draft.text}${input.value ?? ""}`;
+    const next = { ...draft, text: nextText };
+    typeDraftRef.current = next;
+    setTypeDraft(next);
+    paintingCanvas();
+  };
+
+  const typedInputRef = useRef(applyingTypedInput);
+  typedInputRef.current = applyingTypedInput;
 
   useEffect(() => {
-    if (drawTool === "type" && !clickMode) return;
-    committingTypeDraft(typeDraft);
-  }, [drawTool, clickMode]);
+    const unlisten = listen<TypedInput>(DRAW_TYPE_EVENT, (event) => {
+      typedInputRef.current(event.payload);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
 
   const startingStroke = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!enabled || clickMode) return;
     event.preventDefault();
     if (event.button === ERASE_BUTTON) {
-      committingTypeDraft(typeDraft);
+      committingTypeDraft(typeDraftRef.current);
       currentRef.current = null;
       erasingRef.current = true;
       wipingAtPoint(readingCanvasPoint(event));
@@ -701,20 +756,6 @@ export const RenderingDrawCanvas = () => {
     event.preventDefault();
   };
 
-  const handlingTypeKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      setTypeDraft(null);
-      invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
-      return;
-    }
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      committingTypeDraft(typeDraft ? { ...typeDraft, text: event.currentTarget.value } : null);
-    }
-  };
-
   const typeSize = readingTextSize(strokeWidth);
 
   return (
@@ -735,28 +776,25 @@ export const RenderingDrawCanvas = () => {
         onContextMenu={blockingContextMenu}
       />
       {typeDraft ? (
-        <textarea
-          ref={typeInputRef}
-          value={typeDraft.text}
+        <div
           aria-label="Type on screen"
-          onChange={(event) =>
-            setTypeDraft({ ...typeDraft, text: event.target.value })
-          }
-          onKeyDown={handlingTypeKey}
           onPointerDown={(event) => event.stopPropagation()}
-          className="absolute z-50 resize-none bg-transparent outline-none"
+          className="pointer-events-none absolute z-50 whitespace-pre"
           style={{
             left: typeDraft.x,
             top: typeDraft.y,
             minWidth: TEXT_INPUT_MIN_WIDTH,
+            minHeight: typeSize * TEXT_LINE_HEIGHT,
             padding: TEXT_INPUT_PADDING,
             color,
-            caretColor: color,
             fontFamily: TEXT_FONT_FAMILY,
             fontSize: typeSize,
             lineHeight: TEXT_LINE_HEIGHT,
           }}
-        />
+        >
+          {typeDraft.text}
+          <span className="animate-pulse">|</span>
+        </div>
       ) : null}
     </div>
   );

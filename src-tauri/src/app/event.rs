@@ -1,11 +1,16 @@
 use std::{sync::Mutex, thread, time::Duration};
 
-use rdev::{listen, Button, EventType};
+use rdev::{grab, Button, EventType};
 use serde::Serialize;
 use tauri::{menu::MenuItem, AppHandle, Emitter, Manager, Wry};
 
 use crate::app::state::AppState;
-use crate::app::window::{syncing_draw_mode, syncing_overlay_pointer, toggling_settings_window};
+use crate::app::window::{
+    syncing_draw_mode, syncing_overlay_pointer, toggling_settings_window,
+};
+
+const DRAW_TYPE_EVENT: &str = "draw-type-input";
+const SHIFT_KEYS: [&str; 2] = ["ShiftLeft", "ShiftRight"];
 
 const SHORTCUT_CTRL_KEYS: [&str; 2] = ["ControlLeft", "ControlRight"];
 const SHORTCUT_ALT_KEYS: [&str; 2] = ["Alt", "AltGr"];
@@ -91,6 +96,125 @@ fn matching_ctrl_alt_key(pressed: &[String], key: &str) -> bool {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypedInput {
+    pub action: String,
+    pub value: String,
+}
+
+/**
+ * Maps a hook key to Type-tool input. The overlay is not focusable, so
+ * characters have to come from this hook instead of the webview.
+ */
+fn reading_typed_input(key_name: &str, pressed: &[String]) -> Option<TypedInput> {
+    let shift = pressed
+        .iter()
+        .any(|name| SHIFT_KEYS.contains(&name.as_str()));
+    match key_name {
+        "Escape" => Some(TypedInput {
+            action: "escape".into(),
+            value: String::new(),
+        }),
+        "Backspace" => Some(TypedInput {
+            action: "backspace".into(),
+            value: String::new(),
+        }),
+        "Return" | "KpReturn" => Some(TypedInput {
+            action: if shift { "newline".into() } else { "enter".into() },
+            value: String::new(),
+        }),
+        "Space" => Some(TypedInput {
+            action: "char".into(),
+            value: " ".into(),
+        }),
+        "Tab" => Some(TypedInput {
+            action: "char".into(),
+            value: "\t".into(),
+        }),
+        other => reading_typed_char(other, shift).map(|value| TypedInput {
+            action: "char".into(),
+            value,
+        }),
+    }
+}
+
+/**
+ * Letters, digits, and US-punctuation for the Type tool.
+ */
+fn reading_typed_char(key_name: &str, shift: bool) -> Option<String> {
+    let letter = key_name.strip_prefix("Key")?;
+    if letter.len() == 1 && letter.chars().all(|ch| ch.is_ascii_alphabetic()) {
+        let ch = letter.chars().next()?;
+        return Some(if shift {
+            ch.to_ascii_uppercase().to_string()
+        } else {
+            ch.to_ascii_lowercase().to_string()
+        });
+    }
+    let symbol = match (key_name, shift) {
+        ("Num1", false) => "1",
+        ("Num1", true) => "!",
+        ("Num2", false) => "2",
+        ("Num2", true) => "@",
+        ("Num3", false) => "3",
+        ("Num3", true) => "#",
+        ("Num4", false) => "4",
+        ("Num4", true) => "$",
+        ("Num5", false) => "5",
+        ("Num5", true) => "%",
+        ("Num6", false) => "6",
+        ("Num6", true) => "^",
+        ("Num7", false) => "7",
+        ("Num7", true) => "&",
+        ("Num8", false) => "8",
+        ("Num8", true) => "*",
+        ("Num9", false) => "9",
+        ("Num9", true) => "(",
+        ("Num0", false) => "0",
+        ("Num0", true) => ")",
+        ("Minus", false) => "-",
+        ("Minus", true) => "_",
+        ("Equal", false) => "=",
+        ("Equal", true) => "+",
+        ("LeftBracket", false) => "[",
+        ("LeftBracket", true) => "{",
+        ("RightBracket", false) => "]",
+        ("RightBracket", true) => "}",
+        ("BackSlash", false) | ("IntlBackslash", false) => "\\",
+        ("BackSlash", true) | ("IntlBackslash", true) => "|",
+        ("SemiColon", false) => ";",
+        ("SemiColon", true) => ":",
+        ("Quote", false) => "'",
+        ("Quote", true) => "\"",
+        ("Comma", false) => ",",
+        ("Comma", true) => "<",
+        ("Dot", false) => ".",
+        ("Dot", true) => ">",
+        ("Slash", false) => "/",
+        ("Slash", true) => "?",
+        ("BackQuote", false) => "`",
+        ("BackQuote", true) => "~",
+        ("Kp0", _) => "0",
+        ("Kp1", _) => "1",
+        ("Kp2", _) => "2",
+        ("Kp3", _) => "3",
+        ("Kp4", _) => "4",
+        ("Kp5", _) => "5",
+        ("Kp6", _) => "6",
+        ("Kp7", _) => "7",
+        ("Kp8", _) => "8",
+        ("Kp9", _) => "9",
+        ("KpMinus", _) => "-",
+        ("KpPlus", _) => "+",
+        ("KpMultiply", _) => "*",
+        ("KpDivide", _) => "/",
+        ("KpDecimal", _) => ".",
+        _ => return None,
+    };
+    Some(symbol.into())
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum InputEvent {
     KeyEvent { pressed: bool, name: String },
@@ -120,13 +244,15 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
     thread::spawn(move || {
         println!("Starting global input listener...");
 
-        if let Err(err) = listen(move |event| {
+        if let Err(err) = grab(move |event| {
             let mut settings_toggle = false;
             let mut draw_sync = false;
             let mut pointer_sync = false;
             let listening;
             let mut already_pressed = false;
             let mut key_releases: Option<Vec<String>> = None;
+            let mut typed_input: Option<TypedInput> = None;
+            let mut swallow_keys = false;
             let monitor_position;
 
             {
@@ -136,11 +262,23 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                 if let EventType::KeyPress(key) = event.event_type {
                     let key_name = format!("{:?}", key);
                     if key_name.contains('(') {
-                        return;
+                        return if app_state.draw_typing {
+                            None
+                        } else {
+                            Some(event)
+                        };
                     }
                     already_pressed = app_state.pressed_keys.contains(&key_name);
                     if !already_pressed {
                         app_state.pressed_keys.push(key_name.clone());
+                    }
+
+                    if app_state.draw_typing {
+                        swallow_keys = true;
+                        if !already_pressed {
+                            typed_input =
+                                reading_typed_input(&key_name, &app_state.pressed_keys);
+                        }
                     }
 
                     if !already_pressed
@@ -153,7 +291,7 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                         app_state.draw_typing = false;
                         app_state.draw_toggled_at = Some(std::time::Instant::now());
                         draw_sync = true;
-                    } else if !already_pressed {
+                    } else if !already_pressed && !app_state.draw_typing {
                         updating_shortcut_latches(
                             &mut app_state,
                             &mut settings_toggle,
@@ -161,7 +299,9 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                         );
                     }
 
-                    if !already_pressed && app_state.toggle_shortcut == app_state.pressed_keys
+                    if !already_pressed
+                        && !app_state.draw_typing
+                        && app_state.toggle_shortcut == app_state.pressed_keys
                     {
                         app_state.toggle_listener(&app_handle, &toggle_menu_item);
                         if !app_state.listening {
@@ -171,7 +311,14 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                 } else if let EventType::KeyRelease(key) = event.event_type {
                     let key_name = format!("{:?}", key);
                     if key_name.contains('(') {
-                        return;
+                        return if app_state.draw_typing {
+                            None
+                        } else {
+                            Some(event)
+                        };
+                    }
+                    if app_state.draw_typing {
+                        swallow_keys = true;
                     }
                     app_state.pressed_keys.retain(|k| k != &key_name);
                     clearing_shortcut_latches(&mut app_state);
@@ -196,6 +343,9 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
             if pointer_sync {
                 syncing_overlay_pointer(&app_handle);
             }
+            if let Some(typed) = typed_input {
+                let _ = app_handle.emit(DRAW_TYPE_EVENT, typed);
+            }
             if let Some(names) = key_releases {
                 for name in names {
                     let _ = app_handle.emit_to(
@@ -209,12 +359,16 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                 }
             }
 
+            if swallow_keys {
+                return None;
+            }
+
             if !listening {
-                return;
+                return Some(event);
             }
             if already_pressed {
                 if let EventType::KeyPress(_) = event.event_type {
-                    return;
+                    return Some(event);
                 }
             }
 
@@ -248,8 +402,9 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
             };
 
             let _ = app_handle.emit("input-event", input_event);
+            Some(event)
         }) {
-            eprintln!("rdev listen failed: {:?}", err);
+            eprintln!("rdev grab failed: {:?}", err);
         }
     });
 }
