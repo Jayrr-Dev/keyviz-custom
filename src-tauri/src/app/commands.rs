@@ -27,6 +27,15 @@ pub fn set_toggle_shortcut(app: tauri::AppHandle, shortcut: Vec<String>) {
     app_state.toggle_shortcut = shortcut;
 }
 
+/// Turns draw mode on or off from Settings.
+#[tauri::command]
+pub fn set_draw_mode(app: tauri::AppHandle, enabled: bool) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut app_state = state.lock().unwrap();
+    app_state.draw_mode = enabled;
+    crate::app::window::applying_draw_mode(&app, enabled);
+}
+
 /// Spans the overlay across every display. `monitor_name` only places the keycaps.
 #[tauri::command]
 pub fn set_main_window_monitor(
@@ -130,4 +139,79 @@ pub fn spanning_all_monitors(
         key_width: key_monitor.size().width,
         key_height: key_monitor.size().height,
     })
+}
+
+/// Foreground app used to pick a hotkey set.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForegroundApp {
+    pub process_name: String,
+    pub window_title: String,
+}
+
+/// Reads the focused window's process name and title.
+#[tauri::command]
+pub fn reading_foreground_app() -> ForegroundApp {
+    reading_foreground_app_inner().unwrap_or(ForegroundApp {
+        process_name: String::new(),
+        window_title: String::new(),
+    })
+}
+
+fn reading_foreground_app_inner() -> Option<ForegroundApp> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::{CloseHandle, HMODULE, MAX_PATH};
+        use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+        };
+
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.0 == 0 {
+                return None;
+            }
+
+            let mut title_buf = [0u16; 512];
+            let title_len = GetWindowTextW(hwnd, &mut title_buf);
+            let window_title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+
+            let mut process_id = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+            if process_id == 0 {
+                return Some(ForegroundApp {
+                    process_name: String::new(),
+                    window_title,
+                });
+            }
+
+            let handle =
+                OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id).ok()?;
+            let mut path_buf = [0u16; MAX_PATH as usize];
+            let written = GetModuleFileNameExW(handle, HMODULE(0), &mut path_buf);
+            let _ = CloseHandle(handle);
+            let full_path = if written > 0 {
+                String::from_utf16_lossy(&path_buf[..written as usize])
+            } else {
+                String::new()
+            };
+            let process_name = full_path
+                .rsplit(['\\', '/'])
+                .next()
+                .unwrap_or(&full_path)
+                .to_string();
+
+            Some(ForegroundApp {
+                process_name,
+                window_title,
+            })
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
 }

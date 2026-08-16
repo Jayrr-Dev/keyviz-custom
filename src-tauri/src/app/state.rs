@@ -7,6 +7,7 @@ pub struct AppState {
     pub listening: bool,
     pub pressed_keys: Vec<String>,
     pub toggle_shortcut: Vec<String>,
+    pub draw_mode: bool,
 
     pub monitor_name: Option<String>,
     pub monitor_scale: f64,
@@ -37,6 +38,7 @@ impl AppState {
             listening: true,
             pressed_keys: vec![],
             toggle_shortcut,
+            draw_mode: false,
             monitor_name: None,
             monitor_scale: 1.0,
             monitor_position: (0, 0),

@@ -3,6 +3,12 @@ import { colord } from "colord";
 import { BezierDefinition } from "motion/react";
 import { twMerge } from "tailwind-merge";
 
+/** Two steps toward green from yellow on a 12-hue wheel. */
+const LEFT_COMPLEMENT_HUE_DEG = 60;
+
+/** One step toward orange from yellow on a 12-hue wheel. */
+const RIGHT_COMPLEMENT_HUE_DEG = -30;
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -20,7 +26,13 @@ export const easeInQuint: BezierDefinition = [0.76, 0.05, 0.86, 0.06];
 export const easeInOutExpo: BezierDefinition = [0.86, 0.0, 0.07, 1.0];
 
 /**
- * Hue opposite on the color wheel. Saturation and lightness stay the same.
+ * Color to the left of the pick on a 12-hue wheel. Yellow becomes green.
  */
-export const complementingHexColor = (hex: string): string =>
-  colord(hex).rotate(180).toHex();
+export const pickingLeftComplementColor = (hex: string): string =>
+  colord(hex).rotate(LEFT_COMPLEMENT_HUE_DEG).toHex();
+
+/**
+ * Color to the right of the pick on a 12-hue wheel. Yellow becomes orange.
+ */
+export const pickingRightComplementColor = (hex: string): string =>
+  colord(hex).rotate(RIGHT_COMPLEMENT_HUE_DEG).toHex();

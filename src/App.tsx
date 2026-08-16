@@ -14,12 +14,15 @@ function App() {
       <Suspense fallback={<div>Loading...</div>}>
         <Routes>
           <Route path="/" element={<Visualization />} />
-          <Route path="/settings" element={
-            <ThemeProvider>
-              <Settings />
-              <Toaster position="bottom-right" />
-            </ThemeProvider>
-          } />
+          <Route
+            path="/settings"
+            element={
+              <ThemeProvider>
+                <Settings />
+                <Toaster position="bottom-right" />
+              </ThemeProvider>
+            }
+          />
         </Routes>
       </Suspense>
     </HashRouter>

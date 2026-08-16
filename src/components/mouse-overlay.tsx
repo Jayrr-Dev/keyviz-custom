@@ -1,12 +1,15 @@
-import { complementingHexColor, easeInOutExpo } from "@/lib/utils";
+import {
+  pickingLeftComplementColor,
+  pickingRightComplementColor,
+} from "@/lib/utils";
 import { useKeyEvent } from "@/stores/key_event";
 import { useKeyStyle } from "@/stores/key_style";
-import { MouseButton } from "@/types/event";
 import { platform } from "@tauri-apps/plugin-os";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatingClickBurst } from "./animatingClickBurst";
 import { MouseIndicator } from "./mouse-indicator";
+import { GrabShape, RenderingGrabShape } from "./renderingGrabShape";
 
 /** Hold longer than this and the click becomes a grab (ring). */
 const SHORT_CLICK_MAX_MS = 180;
@@ -14,22 +17,29 @@ const SHORT_CLICK_MAX_MS = 180;
 /** How long the burst stays visible after a short click. */
 const BURST_DISPLAY_MS = 220;
 
+/** Consecutive clicks inside this window grow the burst. */
+const CLICK_COMBO_WINDOW_MS = 500;
+
+/** Extra scale added per click in the combo. */
+const CLICK_COMBO_SCALE_STEP = 0.28;
+
+/** Cap so the burst stays on screen. */
+const CLICK_COMBO_SCALE_MAX = 2.4;
+
 /** Grab ring diameter relative to the click-line highlight size. */
 const RING_SIZE_RATIO = 0.5;
 
 /** Grab ring stroke relative to ring diameter. */
 const RING_BORDER_RATIO = 0.14;
 
-/** Thin black edge on both sides of the ring stroke. */
-const RING_OUTLINE = "0 0 0 0.5px #000000, inset 0 0 0 0.5px #000000";
-
 /**
- * Right click uses the opposite hue of the picker color.
+ * Hold shape for each mouse button.
  */
-const pickingHighlightColor = (
-  button: MouseButton | null,
-  baseColor: string,
-) => (button === "Right" ? complementingHexColor(baseColor) : baseColor);
+const pickingGrabShape = (button: string | null): GrabShape => {
+  if (button === "Right") return "square";
+  if (button === "Middle") return "triangle";
+  return "circle";
+};
 
 const isMacos = platform() === "macos";
 
@@ -48,14 +58,21 @@ export const MouseOverlay = () => {
   const [showBurst, setShowBurst] = useState(false);
   const [showRing, setShowRing] = useState(false);
   const [burstKey, setBurstKey] = useState(0);
+  const [burstVariant, setBurstVariant] = useState<
+    "straight" | "wavy" | "jagged"
+  >("straight");
+  const [grabShape, setGrabShape] = useState<GrabShape>("circle");
+  const [comboScale, setComboScale] = useState(1);
+  const [comboCount, setComboCount] = useState(1);
   const [highlightColor, setHighlightColor] = useState(style.color);
-  const [isSwiggly, setIsSwiggly] = useState(false);
 
   const positionRef = useRef<HTMLDivElement>(null);
   const burstTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isGrabRef = useRef(false);
   const hasPressCycleRef = useRef(false);
+  const comboCountRef = useRef(0);
+  const lastBurstAtRef = useRef(0);
 
   const clearingTimers = () => {
     if (burstTimeoutRef.current) {
@@ -83,8 +100,21 @@ export const MouseOverlay = () => {
       hasPressCycleRef.current = true;
       clearingTimers();
       isGrabRef.current = false;
-      setHighlightColor(pickingHighlightColor(pressedMouseButton, style.color));
-      setIsSwiggly(pressedMouseButton === "Right");
+      setBurstVariant(
+        pressedMouseButton === "Right"
+          ? "wavy"
+          : pressedMouseButton === "Middle"
+            ? "jagged"
+            : "straight",
+      );
+      setGrabShape(pickingGrabShape(pressedMouseButton));
+      setHighlightColor(
+        pressedMouseButton === "Right"
+          ? pickingLeftComplementColor(style.color)
+          : pressedMouseButton === "Middle"
+            ? pickingRightComplementColor(style.color)
+            : style.color,
+      );
       setShowBurst(false);
       setShowRing(false);
       holdTimeoutRef.current = setTimeout(() => {
@@ -108,6 +138,19 @@ export const MouseOverlay = () => {
       return;
     }
 
+    const now = Date.now();
+    comboCountRef.current =
+      now - lastBurstAtRef.current <= CLICK_COMBO_WINDOW_MS
+        ? comboCountRef.current + 1
+        : 1;
+    lastBurstAtRef.current = now;
+    setComboCount(comboCountRef.current);
+    setComboScale(
+      Math.min(
+        1 + (comboCountRef.current - 1) * CLICK_COMBO_SCALE_STEP,
+        CLICK_COMBO_SCALE_MAX,
+      ),
+    );
     setBurstKey((key) => key + 1);
     setShowBurst(true);
     burstTimeoutRef.current = setTimeout(() => {
@@ -143,7 +186,7 @@ export const MouseOverlay = () => {
       if (!shouldUpdatePosition) return;
 
       const dpr = isMacos ? 1 : window.devicePixelRatio || 1;
-      el.style.transform = `translate3d(${state.mouse.x / dpr}px, ${state.mouse.y / dpr}px, 0) translate(-50%, -50%)`;
+      el.style.transform = `translate3d(${state.mouse.x / dpr}px, ${state.mouse.y / dpr}px, 0)`;
     });
 
     return () => unsubscribe();
@@ -154,6 +197,7 @@ export const MouseOverlay = () => {
     style.keepIndicator,
   ]);
 
+  const usesMouseIcons = (style.indicatorStyle ?? "keyboard") === "mouse";
   const shouldRender =
     style.showClicks ||
     style.keepHighlight ||
@@ -171,13 +215,16 @@ export const MouseOverlay = () => {
       <div
         ref={positionRef}
         className="absolute top-0 left-0 will-change-transform"
-        style={{
-          width: style.size,
-          height: style.size,
-        }}
       >
         {style.showClicks && (
-          <>
+          <div
+            className="absolute"
+            style={{
+              width: style.size,
+              height: style.size,
+              transform: "translate(-50%, -50%)",
+            }}
+          >
             <AnimatingClickBurst
               key={burstKey}
               show={showBurst}
@@ -185,37 +232,25 @@ export const MouseOverlay = () => {
               size={style.size}
               color={highlightColor}
               duration={animationDuration}
-              swiggly={isSwiggly}
+              variant={burstVariant}
+              comboScale={comboScale}
+              comboCount={comboCount}
             />
-            <motion.div
-              className="absolute left-1/2 top-1/2"
-              initial={false}
-              animate={{
-                opacity: ringVisible ? 1 : 0,
-                scale: showRing ? 0.85 : 1,
-                borderWidth: ringSize * RING_BORDER_RATIO,
-                x: "-50%",
-                y: "-50%",
-              }}
-              style={{
-                width: ringSize,
-                height: ringSize,
-                borderColor: highlightColor,
-                borderStyle: "solid",
-                borderRadius: "50%",
-                boxShadow: RING_OUTLINE,
-              }}
-              transition={{
-                duration: animationDuration,
-                ease: easeInOutExpo,
-              }}
+            <RenderingGrabShape
+              shape={grabShape}
+              size={ringSize}
+              color={highlightColor}
+              stroke={ringSize * RING_BORDER_RATIO}
+              visible={ringVisible}
+              pressed={showRing}
+              duration={animationDuration}
             />
-          </>
+          </div>
         )}
 
-        {style.showIndicator && (
+        {style.showIndicator && usesMouseIcons && (
           <motion.div
-            className="absolute left-1/2 top-1/2"
+            className="absolute"
             animate={{ opacity: indicatorVisible ? 1 : 0 }}
             transition={{ duration: 0.2 }}
           >

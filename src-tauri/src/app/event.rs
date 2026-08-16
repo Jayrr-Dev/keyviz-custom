@@ -5,6 +5,29 @@ use serde::Serialize;
 use tauri::{menu::MenuItem, AppHandle, Emitter, Manager, Wry};
 
 use crate::app::state::AppState;
+use crate::app::window::{applying_draw_mode, toggling_settings_window};
+
+const SHORTCUT_CTRL_KEYS: [&str; 2] = ["ControlLeft", "ControlRight"];
+const SHORTCUT_ALT_KEYS: [&str; 2] = ["Alt", "AltGr"];
+const SETTINGS_KEY: &str = "KeyQ";
+const DRAW_MODE_KEY: &str = "KeyY";
+
+/**
+ * True when Ctrl+Alt+the given key is held, in any order.
+ */
+fn matching_ctrl_alt_key(pressed: &[String], key: &str) -> bool {
+    if pressed.len() != 3 {
+        return false;
+    }
+    let has_ctrl = pressed
+        .iter()
+        .any(|name| SHORTCUT_CTRL_KEYS.contains(&name.as_str()));
+    let has_alt = pressed
+        .iter()
+        .any(|name| SHORTCUT_ALT_KEYS.contains(&name.as_str()));
+    let has_key = pressed.iter().any(|name| name == key);
+    has_ctrl && has_alt && has_key
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
@@ -54,6 +77,13 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                 }
                 // record key as pressed
                 app_state.pressed_keys.push(key_name);
+                if matching_ctrl_alt_key(&app_state.pressed_keys, SETTINGS_KEY) {
+                    toggling_settings_window(&app_handle);
+                }
+                if matching_ctrl_alt_key(&app_state.pressed_keys, DRAW_MODE_KEY) {
+                    app_state.draw_mode = !app_state.draw_mode;
+                    applying_draw_mode(&app_handle, app_state.draw_mode);
+                }
                 // check if toggle shortcut is pressed
                 if app_state.toggle_shortcut == app_state.pressed_keys {
                     app_state.toggle_listener(&app_handle, &toggle_menu_item);

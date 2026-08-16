@@ -1,3 +1,47 @@
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
+
+/**
+ * Opens settings, or closes them if that window is already up.
+ */
+pub fn toggling_settings_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let visible = window.is_visible().unwrap_or(false);
+        if visible {
+            let _ = window.close();
+            let _ = app.emit_to("main", "settings-window", false);
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = app.emit_to("main", "settings-window", true);
+        }
+        return;
+    }
+
+    let webview_url = tauri::WebviewUrl::App("index.html#/settings".into());
+    let _ = WebviewWindowBuilder::new(app, "settings", webview_url)
+        .title("Keyviz")
+        .inner_size(800.0, 640.0)
+        .min_inner_size(640.0, 480.0)
+        .max_inner_size(1000.0, 800.0)
+        .maximizable(false)
+        .build();
+
+    let _ = app.emit_to("main", "settings-window", true);
+}
+
+/**
+ * Turns draw mode on or off and lets the overlay take mouse clicks while drawing.
+ */
+pub fn applying_draw_mode(app: &AppHandle, enabled: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_ignore_cursor_events(!enabled);
+        if enabled {
+            let _ = window.set_focus();
+        }
+    }
+    let _ = app.emit("draw-mode-toggle", enabled);
+}
+
 pub fn config_window(window: &tauri::WebviewWindow) {
     window
         .set_ignore_cursor_events(true)

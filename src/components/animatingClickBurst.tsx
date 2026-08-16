@@ -3,11 +3,14 @@ import { colord } from "colord";
 import { motion } from "motion/react";
 import { useMemo } from "react";
 
-/** Number of spark lines around the cursor. */
+/** Number of spark lines on the first click. */
 const CLICK_RAY_COUNT = 8;
 
-/** Even spacing around a full circle. */
-const CLICK_RAY_STEP_DEG = 360 / CLICK_RAY_COUNT;
+/** Extra rays added per consecutive click in the combo window. */
+const CLICK_RAY_COMBO_EXTRA = 2;
+
+/** Cap so the burst stays readable. */
+const CLICK_RAY_COUNT_MAX = 20;
 
 /** Min/max ray length as a fraction of the highlight size. */
 const CLICK_RAY_LENGTH_RATIO_MIN = 0.12;
@@ -26,19 +29,14 @@ const CLICK_RAY_BURST_DELAY_MAX_S = 0.03;
 /** Hard black edge around each ray. */
 const CLICK_RAY_OUTLINE = "0 0 0 0.5px #000000";
 
-/** Wave cycles along a swiggly right-click ray. */
-const CLICK_RAY_WAVE_CYCLES = 2.2;
-
 /** Wave amplitude as a fraction of ray length. */
-const CLICK_RAY_WAVE_AMP_RATIO = 0.18;
+const CLICK_RAY_WAVE_AMP_RATIO = 0.045;
 
-/** Samples used to draw each wavy path. */
-const CLICK_RAY_WAVE_STEPS = 18;
+/** Zigzag amplitude as a fraction of ray length. */
+const CLICK_RAY_JAG_AMP_RATIO = 0.05;
 
-const CLICK_RAY_ANGLES = Array.from(
-  { length: CLICK_RAY_COUNT },
-  (_, index) => index * CLICK_RAY_STEP_DEG,
-);
+/** Sharp corners along a middle-click ray. */
+const CLICK_RAY_JAG_STEPS = 4;
 
 /**
  * Random value in `[min, max]`.
@@ -47,22 +45,35 @@ const pickingRandomRange = (min: number, max: number) =>
   min + Math.random() * (max - min);
 
 /**
- * Sine path from the hotspot out along +Y.
+ * One cubic S-curve from the hotspot out along +Y.
  */
-const buildingWavyPath = (
+const buildingWavyPath = (length: number, amplitude: number, phase: number) => {
+  const startBend = Math.cos(phase) * amplitude;
+  const midBend = Math.sin(phase) * amplitude;
+  return `M 0 0 C ${startBend.toFixed(2)} ${(length * 0.33).toFixed(2)} ${(-midBend).toFixed(2)} ${(length * 0.67).toFixed(2)} 0 ${length.toFixed(2)}`;
+};
+
+/**
+ * Sharp zigzag from the hotspot out along +Y.
+ */
+const buildingJaggedPath = (
   length: number,
   amplitude: number,
   phase: number,
 ) => {
-  const points = Array.from({ length: CLICK_RAY_WAVE_STEPS + 1 }, (_, index) => {
-    const t = index / CLICK_RAY_WAVE_STEPS;
-    const x =
-      Math.sin(t * CLICK_RAY_WAVE_CYCLES * Math.PI * 2 + phase) * amplitude;
-    const y = t * length;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  const points = Array.from({ length: CLICK_RAY_JAG_STEPS + 1 }, (_, index) => {
+    const t = index / CLICK_RAY_JAG_STEPS;
+    const isEnd = index === 0 || index === CLICK_RAY_JAG_STEPS;
+    const side = index % 2 === 0 ? 1 : -1;
+    const x = isEnd
+      ? 0
+      : side * amplitude * (0.75 + 0.25 * Math.sin(phase + index));
+    return `${x.toFixed(2)},${(t * length).toFixed(2)}`;
   });
   return `M ${points.join(" L ")}`;
 };
+
+type ClickBurstVariant = "straight" | "wavy" | "jagged";
 
 interface AnimatingClickBurstProps {
   show: boolean;
@@ -70,7 +81,9 @@ interface AnimatingClickBurstProps {
   size: number;
   color: string;
   duration: number;
-  swiggly?: boolean;
+  variant?: ClickBurstVariant;
+  comboScale?: number;
+  comboCount?: number;
 }
 
 /**
@@ -82,12 +95,18 @@ export const AnimatingClickBurst = ({
   size,
   color,
   duration,
-  swiggly = false,
+  variant = "straight",
+  comboScale = 1,
+  comboCount = 1,
 }: AnimatingClickBurstProps) => {
+  const rayCount = Math.min(
+    CLICK_RAY_COUNT + (comboCount - 1) * CLICK_RAY_COMBO_EXTRA,
+    CLICK_RAY_COUNT_MAX,
+  );
   const rays = useMemo(
     () =>
-      CLICK_RAY_ANGLES.map((angle) => ({
-        angle,
+      Array.from({ length: rayCount }, (_, index) => ({
+        angle: index * (360 / rayCount),
         length:
           size *
           pickingRandomRange(
@@ -105,11 +124,15 @@ export const AnimatingClickBurst = ({
         amplitude:
           size *
           pickingRandomRange(
-            CLICK_RAY_WAVE_AMP_RATIO * 0.7,
-            CLICK_RAY_WAVE_AMP_RATIO * 1.3,
+            (variant === "jagged"
+              ? CLICK_RAY_JAG_AMP_RATIO
+              : CLICK_RAY_WAVE_AMP_RATIO) * 0.85,
+            (variant === "jagged"
+              ? CLICK_RAY_JAG_AMP_RATIO
+              : CLICK_RAY_WAVE_AMP_RATIO) * 1.15,
           ),
       })),
-    [size],
+    [size, variant, rayCount],
   );
   const innerGap = size * CLICK_RAY_INNER_RATIO;
   const isVisible = show || keepHighlight;
@@ -117,7 +140,10 @@ export const AnimatingClickBurst = ({
   const fillColor = colord(color).alpha(1).toHex();
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      style={{ transform: `scale(${comboScale})` }}
+    >
       {rays.map((ray) => (
         <div
           key={ray.angle}
@@ -126,20 +152,19 @@ export const AnimatingClickBurst = ({
             transform: `translate(-50%, -50%) rotate(${ray.angle}deg)`,
           }}
         >
-          {swiggly ? (
+          {variant !== "straight" ? (
             <motion.svg
               className="absolute left-1/2 overflow-visible"
               initial={{ scaleY: 0, opacity: 0 }}
               animate={
                 isVisible
-                  ? { scaleY: 1, opacity: visibleOpacity, rotate: [0, 8, -6, 0] }
-                  : { scaleY: 0, opacity: 0, rotate: 0 }
+                  ? { scaleY: 1, opacity: visibleOpacity }
+                  : { scaleY: 0, opacity: 0 }
               }
               transition={{
                 duration,
                 ease: easeOutQuint,
                 delay: isVisible ? ray.delay : 0,
-                rotate: { duration: duration * 1.4, ease: "easeInOut" },
               }}
               width={Math.max(ray.amplitude * 2 + ray.width * 4, 8)}
               height={ray.length}
@@ -151,21 +176,29 @@ export const AnimatingClickBurst = ({
               }}
             >
               <path
-                d={buildingWavyPath(ray.length, ray.amplitude, ray.phase)}
+                d={
+                  variant === "jagged"
+                    ? buildingJaggedPath(ray.length, ray.amplitude, ray.phase)
+                    : buildingWavyPath(ray.length, ray.amplitude, ray.phase)
+                }
                 fill="none"
                 stroke="#000000"
                 strokeWidth={ray.width + 1}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                strokeLinecap={variant === "jagged" ? "square" : "round"}
+                strokeLinejoin={variant === "jagged" ? "miter" : "round"}
                 transform={`translate(${Math.max(ray.amplitude * 2 + ray.width * 4, 8) / 2} 0)`}
               />
               <path
-                d={buildingWavyPath(ray.length, ray.amplitude, ray.phase)}
+                d={
+                  variant === "jagged"
+                    ? buildingJaggedPath(ray.length, ray.amplitude, ray.phase)
+                    : buildingWavyPath(ray.length, ray.amplitude, ray.phase)
+                }
                 fill="none"
                 stroke={fillColor}
                 strokeWidth={ray.width}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                strokeLinecap={variant === "jagged" ? "square" : "round"}
+                strokeLinejoin={variant === "jagged" ? "miter" : "round"}
                 transform={`translate(${Math.max(ray.amplitude * 2 + ray.width * 4, 8) / 2} 0)`}
               />
             </motion.svg>
