@@ -1,7 +1,7 @@
 import { Separator } from "@/components/ui/separator";
 import {
-  DRAW_MODE_CLEAR_EVENT,
   DRAW_INK_COLORS,
+  DRAW_MODE_CLEAR_EVENT,
   DRAW_STROKE_WIDTHS,
   DrawInkTool,
   HOTKEY_HINT_HIDE_MS,
@@ -55,12 +55,15 @@ const SQUARE_GLYPH_VIEWBOX = 24;
 const SQUARE_GLYPH_INSET = 5;
 const SQUARE_GLYPH_STROKE = 1.5;
 
+const SELECT_MOVE_CURSOR_SCALE = 0.78;
+const SELECT_MOVE_ARROWS_SCALE = 0.7;
+
 const DRAW_INK_TOOLS: {
   id: DrawInkTool;
   label: string;
   icon: typeof Pen01Icon | null;
 }[] = [
-  { id: "move", label: "Move", icon: ArrowAllDirectionIcon },
+  { id: "move", label: "Select and move", icon: null },
   { id: "pen", label: "Pen", icon: Pen01Icon },
   { id: "type", label: "Type", icon: TextFontIcon },
   { id: "highlight", label: "Highlight", icon: HighlighterIcon },
@@ -95,10 +98,32 @@ const RenderingSquareGlyph = ({ size }: { size: number }) => {
 };
 
 /**
+ * Cursor plus four-way arrows, for the select-and-move tool.
+ */
+const RenderingSelectMoveGlyph = ({ size }: { size: number }) => {
+  const cursorSize = Math.max(8, Math.round(size * SELECT_MOVE_CURSOR_SCALE));
+  const arrowsSize = Math.max(7, Math.round(size * SELECT_MOVE_ARROWS_SCALE));
+  return (
+    <span
+      className="relative block"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <span className="absolute bottom-0 left-0">
+        <HugeiconsIcon icon={Cursor01Icon} size={cursorSize} />
+      </span>
+      <span className="absolute -right-px -top-px">
+        <HugeiconsIcon icon={ArrowAllDirectionIcon} size={arrowsSize} />
+      </span>
+    </span>
+  );
+};
+
+/**
  * Draw tools, rendered on the overlay above the ink canvas.
  */
 export const RenderingDrawToolbar = () => {
-  const color = useDrawMode((state) => state.color);
+  const pickedSwatch = useDrawMode((state) => state.pickedSwatch);
   const strokeWidth = useDrawMode((state) => state.strokeWidth);
   const clickMode = useDrawMode((state) => state.clickMode);
   const drawTool = useDrawMode((state) => state.drawTool);
@@ -147,9 +172,7 @@ export const RenderingDrawToolbar = () => {
   return (
     <div className={TOOLBAR_HOST}>
       {hintVisible ? (
-        <div className={HINT_SHELL}>
-          {clickMode ? CLICK_HINT : DRAW_HINT}
-        </div>
+        <div className={HINT_SHELL}>{clickMode ? CLICK_HINT : DRAW_HINT}</div>
       ) : null}
       <div className={TOOLBAR_SHELL}>
         <button
@@ -185,7 +208,9 @@ export const RenderingDrawToolbar = () => {
                 : ICON_BUTTON_IDLE
             }
           >
-            {tool.icon ? (
+            {tool.id === "move" ? (
+              <RenderingSelectMoveGlyph size={ICON_SIZE} />
+            ) : tool.icon ? (
               <HugeiconsIcon icon={tool.icon} size={ICON_SIZE} />
             ) : (
               <RenderingSquareGlyph size={ICON_SIZE} />
@@ -202,7 +227,7 @@ export const RenderingDrawToolbar = () => {
             aria-label={`Ink ${swatch}`}
             onClick={() => togglingDrawColor(swatch)}
             className={
-              color === swatch
+              pickedSwatch === swatch
                 ? "size-5 rounded-full ring-2 ring-white ring-offset-2 ring-offset-neutral-900"
                 : "size-5 rounded-full ring-1 ring-white/25 hover:ring-white/60"
             }

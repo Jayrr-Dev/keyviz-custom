@@ -203,13 +203,8 @@ const mouseIcons: Record<string, JSX.Element> = {
 /**
  * Current mouse action name for the floating indicator.
  */
-const pickingIndicatorAction = (
-  pressedButton: string | null,
-  wheel: number,
-) => {
+const pickingIndicatorAction = (pressedButton: string | null) => {
   if (pressedButton && mouseIcons[pressedButton]) return pressedButton;
-  if (wheel > 0) return "ScrollUp";
-  if (wheel < 0) return "ScrollDown";
   return "Default";
 };
 
@@ -218,10 +213,9 @@ const pickingIndicatorAction = (
  */
 export const MouseIndicator = () => {
   const pressedButton = useKeyEvent((state) => state.pressedMouseButton);
-  const wheel = useKeyEvent((state) => state.mouse.wheel);
   const style = useKeyStyle((state) => state.mouse);
 
-  const action = pickingIndicatorAction(pressedButton, wheel);
+  const action = pickingIndicatorAction(pressedButton);
 
   return (
     <div

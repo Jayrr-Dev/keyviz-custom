@@ -18,7 +18,7 @@ export const DRAW_INK_COLORS = [
   "#737373",
   "#000000",
 ] as const;
-/** Freehand ink. Move drags existing marks. Type places text. Highlight is a square-nib marker. Shape tools drag from start to end. */
+/** Freehand ink. Select and move relocates marks. Type places text. Highlight is a square-nib marker. Shape tools drag from start to end. */
 export type DrawInkTool =
   | "pen"
   | "move"
@@ -47,6 +47,8 @@ export interface DrawModeState {
   clickMode: boolean;
   drawTool: DrawInkTool;
   color: string;
+  /** Toolbar swatch override. Null uses the Settings color. */
+  pickedSwatch: string | null;
   strokeWidth: number;
   strokeLifetimeSec: number;
   showHotkeyHint: boolean;
@@ -65,6 +67,12 @@ interface DrawModeActions {
 
 export type DrawModeStore = DrawModeState & DrawModeActions;
 
+/**
+ * Ink color in use: a toolbar swatch if one is picked, otherwise Settings.
+ */
+export const readingActiveDrawColor = (state: DrawModeState) =>
+  state.pickedSwatch ?? state.color;
+
 const createDrawModeStore = createSyncedStore<DrawModeStore>(
   DRAW_MODE_STORE,
   (set) => ({
@@ -72,16 +80,17 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
     clickMode: false,
     drawTool: DEFAULT_DRAW_TOOL,
     color: DEFAULT_DRAW_COLOR,
+    pickedSwatch: null,
     strokeWidth: DEFAULT_STROKE_WIDTH,
     strokeLifetimeSec: DEFAULT_STROKE_LIFETIME_SEC,
     showHotkeyHint: DEFAULT_SHOW_HOTKEY_HINT,
     setEnabled: (enabled) => set({ enabled, clickMode: false }),
     setClickMode: (clickMode) => set({ clickMode }),
     setDrawTool: (drawTool) => set({ drawTool, clickMode: false }),
-    setColor: (color) => set({ color }),
+    setColor: (color) => set({ color, pickedSwatch: null }),
     togglingDrawColor: (swatch) =>
       set((state) => ({
-        color: state.color === swatch ? DEFAULT_DRAW_COLOR : swatch,
+        pickedSwatch: state.pickedSwatch === swatch ? null : swatch,
       })),
     setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
     setStrokeLifetimeSec: (strokeLifetimeSec) => set({ strokeLifetimeSec }),
@@ -108,6 +117,7 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
           ...saved,
           enabled: current.enabled,
           clickMode: current.clickMode,
+          pickedSwatch: current.pickedSwatch,
           drawTool: saved.drawTool ?? current.drawTool,
           strokeLifetimeSec:
             typeof saved.strokeLifetimeSec === "number"

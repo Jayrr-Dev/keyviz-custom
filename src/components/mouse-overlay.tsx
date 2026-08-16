@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatingClickBurst } from "./animatingClickBurst";
 import { MouseIndicator } from "./mouse-indicator";
 import { GrabShape, RenderingGrabShape } from "./renderingGrabShape";
+import { RenderingScrollArrow } from "./renderingScrollArrow";
 
 /** Hold longer than this and the click becomes a grab (ring). */
 const SHORT_CLICK_MAX_MS = 180;
@@ -31,6 +32,15 @@ const RING_SIZE_RATIO = 0.5;
 
 /** Grab ring stroke relative to ring diameter. */
 const RING_BORDER_RATIO = 0.14;
+
+/** Green scroll arrow sits just right of the pointer. */
+const SCROLL_ARROW_OFFSET_X = 12;
+
+/** Drops the arrow onto the cursor body, not the tip. */
+const SCROLL_ARROW_OFFSET_Y = 2;
+
+/** Matches the system cursor, not the click highlight. */
+const SCROLL_ARROW_SIZE = 16;
 
 const GRAB_SHAPE_BY_BUTTON: Record<string, GrabShape> = {
   Left: "circle",
@@ -183,6 +193,7 @@ export const MouseOverlay = () => {
         style.keepHighlight ||
         state.pressedMouseButton ||
         state.mouse.dragging ||
+        state.mouse.wheel !== 0 ||
         style.showIndicator ||
         style.keepIndicator;
 
@@ -205,7 +216,8 @@ export const MouseOverlay = () => {
     style.showClicks ||
     style.keepHighlight ||
     style.showIndicator ||
-    style.keepIndicator;
+    style.keepIndicator ||
+    wheel !== 0;
   if (!shouldRender) return null;
 
   const ringSize = style.size * RING_SIZE_RATIO;
@@ -213,6 +225,7 @@ export const MouseOverlay = () => {
   const grabShape = pickingGrabShape(pressedMouseButton);
   const indicatorVisible =
     showBurst || showRing || style.keepIndicator || wheel !== 0;
+  const scrolling = wheel !== 0;
 
   return (
     <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
@@ -262,6 +275,21 @@ export const MouseOverlay = () => {
             <MouseIndicator />
           </motion.div>
         )}
+
+        {scrolling ? (
+          <div
+            className="absolute"
+            style={{
+              left: SCROLL_ARROW_OFFSET_X,
+              top: SCROLL_ARROW_OFFSET_Y,
+            }}
+          >
+            <RenderingScrollArrow
+              direction={wheel > 0 ? "up" : "down"}
+              size={SCROLL_ARROW_SIZE}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

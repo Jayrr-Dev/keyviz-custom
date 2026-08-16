@@ -3,6 +3,7 @@ import {
   DrawInkTool,
   HIGHLIGHT_OPACITY,
   HIGHLIGHT_WIDTH_SCALE,
+  readingActiveDrawColor,
   useDrawMode,
 } from "@/stores/draw_mode";
 import { invoke } from "@tauri-apps/api/core";
@@ -39,10 +40,15 @@ const TEXT_INPUT_MIN_WIDTH = 160;
 const TEXT_INPUT_PADDING = 4;
 const DRAW_TYPE_EVENT = "draw-type-input";
 const MOVE_HIT_PADDING = 14;
+const SELECT_PAD = 8;
+const SELECT_STROKE = 1.5;
+const SELECT_DASH = [5, 4];
+const SELECT_COLOR = "rgba(255, 255, 255, 0.95)";
+const SELECT_FILL = "rgba(255, 255, 255, 0.08)";
 const SHAPE_KINDS = new Set<DrawInkTool>(["arrow", "square", "circle"]);
 const CANVAS_BASE_CLASS = "absolute inset-0 h-full w-full";
 const DRAW_TOOL_CURSOR: Record<DrawInkTool, string> = {
-  move: "cursor-move",
+  move: "cursor-grab",
   pen: "cursor-crosshair",
   type: "cursor-text",
   highlight: "cursor-cell",
@@ -139,10 +145,7 @@ const readingTextHitBox = (stroke: DrawStroke) => {
   const origin = stroke.points[0] ?? { x: 0, y: 0 };
   const size = readingTextSize(stroke.width);
   const lines = (stroke.text ?? "").split("\n");
-  const longest = lines.reduce(
-    (max, line) => Math.max(max, line.length),
-    1,
-  );
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 1);
   return {
     left: origin.x,
     top: origin.y,
@@ -378,7 +381,11 @@ const paintingTypeStroke = (
   context.textBaseline = "top";
   const lines = stroke.text.split("\n");
   lines.forEach((line, index) => {
-    context.fillText(line, origin.x, origin.y + index * size * TEXT_LINE_HEIGHT);
+    context.fillText(
+      line,
+      origin.x,
+      origin.y + index * size * TEXT_LINE_HEIGHT,
+    );
   });
 };
 
@@ -408,7 +415,67 @@ const strokingSmoothedPath = (
 };
 
 /**
- * Topmost stroke under the pointer, for Move.
+ * Bounding box used to draw the select outline.
+ */
+const readingStrokeBounds = (stroke: DrawStroke) => {
+  if (stroke.kind === "type") {
+    return readingTextHitBox(stroke);
+  }
+  if (SHAPE_KINDS.has(stroke.kind)) {
+    const box = readingShapeBox(stroke.points);
+    return {
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+    };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of stroke.points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  const pad =
+    (stroke.kind === "highlight"
+      ? stroke.width * HIGHLIGHT_WIDTH_SCALE
+      : stroke.width) / 2;
+  return {
+    left: minX - pad,
+    top: minY - pad,
+    width: maxX - minX + pad * 2,
+    height: maxY - minY + pad * 2,
+  };
+};
+
+/**
+ * Dashed box around the selected mark.
+ */
+const paintingSelection = (
+  context: CanvasRenderingContext2D,
+  stroke: DrawStroke,
+) => {
+  const box = readingStrokeBounds(stroke);
+  const left = box.left - SELECT_PAD;
+  const top = box.top - SELECT_PAD;
+  const width = box.width + SELECT_PAD * 2;
+  const height = box.height + SELECT_PAD * 2;
+  context.save();
+  context.fillStyle = SELECT_FILL;
+  context.strokeStyle = SELECT_COLOR;
+  context.lineWidth = SELECT_STROKE;
+  context.setLineDash(SELECT_DASH);
+  context.fillRect(left, top, width, height);
+  context.strokeRect(left, top, width, height);
+  context.restore();
+};
+
+/**
+ * Topmost stroke under the pointer, for select and move.
  */
 const findingStrokeAtPoint = (
   strokes: DrawStroke[],
@@ -526,7 +593,7 @@ const fillingEraseSteps = (
  */
 export const RenderingDrawCanvas = () => {
   const enabled = useDrawMode((state) => state.enabled);
-  const color = useDrawMode((state) => state.color);
+  const color = useDrawMode(readingActiveDrawColor);
   const strokeWidth = useDrawMode((state) => state.strokeWidth);
   const strokeLifetimeSec =
     useDrawMode((state) => state.strokeLifetimeSec) ?? 0;
@@ -539,6 +606,7 @@ export const RenderingDrawCanvas = () => {
   const strokesRef = useRef<DrawStroke[]>([]);
   const currentRef = useRef<DrawStroke | null>(null);
   const moveRef = useRef<MoveSession | null>(null);
+  const selectedIndexRef = useRef<number | null>(null);
   const erasingRef = useRef(false);
   const laseringRef = useRef(false);
   const eraseTrailRef = useRef<StreakTrailPoint[]>([]);
@@ -556,6 +624,11 @@ export const RenderingDrawCanvas = () => {
     paintingStrokes(canvas, live, strokeLifetimeRef.current * 1000);
     const context = canvas.getContext("2d");
     if (!context) return;
+    const selectedIndex = selectedIndexRef.current;
+    if (drawTool === "move" && selectedIndex != null) {
+      const selected = live[selectedIndex];
+      if (selected) paintingSelection(context, selected);
+    }
     paintingEraseTrail(
       context,
       eraseTrailRef.current,
@@ -633,6 +706,7 @@ export const RenderingDrawCanvas = () => {
       strokesRef.current = [];
       currentRef.current = null;
       moveRef.current = null;
+      selectedIndexRef.current = null;
       eraseTrailRef.current = [];
       laserTrailRef.current = [];
       erasingRef.current = false;
@@ -659,6 +733,7 @@ export const RenderingDrawCanvas = () => {
     strokesRef.current = [];
     currentRef.current = null;
     moveRef.current = null;
+    selectedIndexRef.current = null;
     eraseTrailRef.current = [];
     laserTrailRef.current = [];
     erasingRef.current = false;
@@ -678,11 +753,21 @@ export const RenderingDrawCanvas = () => {
    */
   const erasingAtPoint = (point: DrawPoint) => {
     const radius = strokeWidth / 2 + ERASE_RADIUS_PADDING;
+    const selected =
+      selectedIndexRef.current != null
+        ? strokesRef.current[selectedIndexRef.current]
+        : null;
     const next = strokesRef.current.filter(
       (stroke) => !hittingStroke(stroke, point, radius),
     );
     if (next.length === strokesRef.current.length) return;
     strokesRef.current = next;
+    if (!selected) {
+      selectedIndexRef.current = null;
+      return;
+    }
+    const nextIndex = next.indexOf(selected);
+    selectedIndexRef.current = nextIndex >= 0 ? nextIndex : null;
   };
 
   /**
@@ -771,6 +856,12 @@ export const RenderingDrawCanvas = () => {
     committingTypeDraft(typeDraftRef.current);
   }, [drawTool, clickMode]);
 
+  useEffect(() => {
+    if (drawTool === "move") return;
+    selectedIndexRef.current = null;
+    paintingCanvas();
+  }, [drawTool]);
+
   /**
    * Overlay stays unfocusable. Type characters arrive from the global hook.
    */
@@ -844,19 +935,24 @@ export const RenderingDrawCanvas = () => {
       const point = readingCanvasPoint(event);
       const index = findingStrokeAtPoint(strokesRef.current, point);
       if (index < 0) {
+        selectedIndexRef.current = null;
         moveRef.current = null;
+        paintingCanvas();
         return;
       }
       event.currentTarget.setPointerCapture(event.pointerId);
       erasingRef.current = false;
       laseringRef.current = false;
+      selectedIndexRef.current = index;
       moveRef.current = { index, last: point };
+      paintingCanvas();
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     erasingRef.current = false;
     laseringRef.current = false;
     moveRef.current = null;
+    selectedIndexRef.current = null;
     currentRef.current = {
       kind: drawTool,
       color,

@@ -94,12 +94,12 @@ export const DrawingMode = () => {
             <HugeiconsIcon icon={CursorEdit01Icon} size="1em" /> Draw on screen
           </ItemTitle>
           <ItemDescription>
-            Click and drag on the overlay. Move relocates marks. Type places
-            text. Alt+X/D/T/H/A/S/C picks tools; Alt+R cycles stroke size;
-            Alt+Q toggles Click mode; Alt+1-7 picks colors. Hold right-click to
-            erase. Hold the middle button for a laser pointer. Use Click on the
-            toolbar to use other apps without losing your drawings.{" "}
-            {DRAW_SHORTCUT} or Escape turns it off.
+            Click and drag on the overlay. Select and move relocates marks. Type
+            places text. Alt+X/D/T/H/A/S/C picks tools; Alt+R cycles stroke
+            size; Alt+Q toggles Click mode; Alt+1-7 picks colors. Hold
+            right-click to erase. Hold the middle button for a laser pointer.
+            Use Click on the toolbar to use other apps without losing your
+            drawings. {DRAW_SHORTCUT} or Escape turns it off.
           </ItemDescription>
         </ItemContent>
         <ItemActions>
@@ -112,7 +112,10 @@ export const DrawingMode = () => {
           <ItemTitle>
             <HugeiconsIcon icon={PaintBoardIcon} size="1em" /> Color
           </ItemTitle>
-          <ItemDescription>Ink color for new strokes</ItemDescription>
+          <ItemDescription>
+            Default ink color. A toolbar swatch overrides it until you click
+            that swatch again.
+          </ItemDescription>
         </ItemContent>
         <ItemActions>
           <ColorInput value={color} onChange={setColor} />
