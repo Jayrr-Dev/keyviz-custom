@@ -86,3 +86,48 @@ If you want to contribute or build the latest features from the source, ensure y
 ---
 
   Built with 🦀 and ❤️ using <a href="https://v2.tauri.app/">Tauri</a>.
+
+---
+
+## Keyviz Stream
+
+This repo is a fork of [Keyviz](https://github.com/mulaRahul/keyviz) by Rahul Mula. The Stream build (v2.2.0) is aimed at classrooms and live streams. Upstream Keyviz still lives at [keyviz.org](https://keyviz.org).
+
+<img src="public/logo.svg" alt="Keyviz Stream icon" width="64">
+
+Windows installers are on the [v2.2.0 release](https://github.com/Jayrr-Dev/keyviz-custom/releases/tag/v2.2.0):
+
+- `Keyviz Stream_2.2.0_x64-setup.exe`
+- `Keyviz Stream_2.2.0_x64_en-US.msi`
+
+To build from this fork:
+
+```bash
+git clone https://github.com/Jayrr-Dev/keyviz-custom.git
+cd keyviz-custom
+npm install
+npx tauri build
+```
+
+### Draw mode
+
+`Ctrl+Alt+D` turns on an overlay you can ink on. The toolbar has pen, arrow, square, circle, select and move, plus color swatches and stroke size. Middle click is a laser (same fading streak as the eraser, no wipe). Right click erases. Escape or `Ctrl+Alt+D` leaves. Toolbar placement (alignment, offset, horizontal or vertical) is under Draw Mode in settings.
+
+<img src="previews/draw-toolbar.png" alt="Draw mode toolbar" width="700">
+
+<img src="previews/draw-mode-settings.png" alt="Draw Mode settings" width="520">
+
+### Mouse hold shapes
+
+Each mouse button can use its own hold ring: circle, triangle, or square. Left, middle, and right are set separately under Mouse, Hold Shape. Changing a dropdown flashes that shape on the cursor.
+
+<img src="previews/hold-shape.png" alt="Hold Shape settings for left, middle, and right" width="520">
+
+<img src="previews/mouse-settings.png" alt="Mouse settings with click highlight" width="600">
+
+### Hotkey labels
+
+The Cursor set now names `Ctrl+T` (new chat tab) and `Ctrl+Shift+M` (full screen). The default set names `Win+Shift+S` as Screenshot.
+
+<img src="previews/screenshot-shortcut.png" alt="Win Shift S key overlay" width="450">
+
