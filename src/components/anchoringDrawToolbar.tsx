@@ -4,15 +4,15 @@ import {
   readingCursorMonitorStyle,
 } from "@/lib/readingCursorMonitor";
 import { useDrawMode } from "@/stores/draw_mode";
+import { alignmentForRow } from "@/types/style";
 import { invoke } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 
 const isMacos = platform() === "macos";
 
-const ANCHOR_SHELL =
-  "pointer-events-none absolute z-50 flex items-end justify-center overflow-hidden";
-const TOOLBAR_SLOT = "pointer-events-auto relative mb-5 w-max max-w-full";
+const ANCHOR_SHELL = "pointer-events-none absolute z-50 flex overflow-hidden";
+const TOOLBAR_SLOT = "pointer-events-auto relative w-max max-w-full";
 
 interface ToolbarRect {
   x: number;
@@ -39,15 +39,21 @@ const reportingToolbarRect = (box: DOMRect | null) => {
 };
 
 /**
- * Pins the draw toolbar to the bottom of the display under the cursor.
- * It lives inside the overlay window, so its buttons are plain DOM clicks.
+ * Pins the draw toolbar to the active display using Settings alignment
+ * and offset.
  */
 export const AnchoringDrawToolbar = () => {
   const enabled = useDrawMode((state) => state.enabled);
+  const toolbarAlignment = useDrawMode((state) => state.toolbarAlignment);
+  const toolbarOffsetX = useDrawMode((state) => state.toolbarOffsetX);
+  const toolbarOffsetY = useDrawMode((state) => state.toolbarOffsetY);
+  const toolbarLayout = useDrawMode((state) => state.toolbarLayout);
   const [monitorStyle, setMonitorStyle] = useState<CSSProperties>(
     FALLBACK_MONITOR_STYLE,
   );
   const slotRef = useRef<HTMLDivElement>(null);
+  const alignment =
+    alignmentForRow[toolbarAlignment] ?? alignmentForRow["bottom-center"];
 
   useEffect(() => {
     if (!enabled) return;
@@ -66,7 +72,8 @@ export const AnchoringDrawToolbar = () => {
       reportingToolbarRect(null);
       return;
     }
-    const measuringSlot = () => reportingToolbarRect(slot.getBoundingClientRect());
+    const measuringSlot = () =>
+      reportingToolbarRect(slot.getBoundingClientRect());
     measuringSlot();
     const observer = new ResizeObserver(measuringSlot);
     observer.observe(slot);
@@ -74,12 +81,28 @@ export const AnchoringDrawToolbar = () => {
       observer.disconnect();
       reportingToolbarRect(null);
     };
-  }, [enabled, monitorStyle]);
+  }, [
+    enabled,
+    monitorStyle,
+    toolbarAlignment,
+    toolbarOffsetX,
+    toolbarOffsetY,
+    toolbarLayout,
+  ]);
 
   if (!enabled) return null;
 
   return (
-    <div className={ANCHOR_SHELL} style={monitorStyle}>
+    <div
+      className={ANCHOR_SHELL}
+      style={{
+        ...monitorStyle,
+        justifyContent: alignment.justifyContent,
+        alignItems: alignment.alignItems,
+        paddingInline: toolbarOffsetX,
+        paddingBlock: toolbarOffsetY,
+      }}
+    >
       <div ref={slotRef} className={TOOLBAR_SLOT}>
         <RenderingDrawToolbar />
       </div>

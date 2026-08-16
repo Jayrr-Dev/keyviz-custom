@@ -4,7 +4,12 @@ import { motion } from "motion/react";
 /** Height of an equilateral triangle relative to its side. */
 const EQUILATERAL_HEIGHT_RATIO = Math.sqrt(3) / 2;
 
-export type GrabShape = "circle" | "square" | "triangle";
+export type GrabShape =
+  | "circle"
+  | "square"
+  | "triangle-up"
+  | "triangle-right"
+  | "triangle-left";
 
 interface RenderingGrabShapeProps {
   shape: GrabShape;
@@ -17,19 +22,31 @@ interface RenderingGrabShapeProps {
 }
 
 /**
- * Equilateral triangle points, inset so the stroke stays inside the box.
+ * Equilateral triangle vertices, inset so the stroke stays inside the box.
+ * Each facing is its own point list, not a runtime rotate.
  */
-const buildingTrianglePoints = (size: number, inset: number) => {
+const buildingTrianglePoints = (
+  size: number,
+  inset: number,
+  facing: GrabShape,
+) => {
   const side = size - inset * 2;
   const height = side * EQUILATERAL_HEIGHT_RATIO;
+  const center = size / 2;
+  if (facing === "triangle-right") {
+    const left = (size - height) / 2;
+    return `${left + height},${center} ${left},${inset} ${left},${size - inset}`;
+  }
+  if (facing === "triangle-left") {
+    const right = (size + height) / 2;
+    return `${right - height},${center} ${right},${inset} ${right},${size - inset}`;
+  }
   const top = (size - height) / 2;
-  const left = inset;
-  const right = size - inset;
-  return `${size / 2},${top} ${left},${top + height} ${right},${top + height}`;
+  return `${center},${top} ${inset},${top + height} ${size - inset},${top + height}`;
 };
 
 /**
- * Hold highlight: circle, square, or equilateral triangle around the cursor.
+ * Hold highlight: circle, square, or a prerotated triangle around the cursor.
  */
 export const RenderingGrabShape = ({
   shape,
@@ -42,8 +59,9 @@ export const RenderingGrabShape = ({
 }: RenderingGrabShapeProps) => {
   const inset = stroke / 2 + 0.5;
   const inner = size - inset * 2;
-  const trianglePoints = buildingTrianglePoints(size, inset);
-  const resolvedShape = shape === "square" ? "circle" : shape;
+  const center = size / 2;
+  const trianglePoints = buildingTrianglePoints(size, inset, shape);
+  const isTriangle = shape.startsWith("triangle");
 
   return (
     <motion.svg
@@ -59,19 +77,19 @@ export const RenderingGrabShape = ({
       }}
       transition={{ duration, ease: easeInOutExpo }}
     >
-      {resolvedShape === "circle" && (
+      {shape === "circle" && (
         <>
           <circle
-            cx={size / 2}
-            cy={size / 2}
+            cx={center}
+            cy={center}
             r={inner / 2}
             fill="none"
             stroke="#000000"
             strokeWidth={stroke + 1}
           />
           <circle
-            cx={size / 2}
-            cy={size / 2}
+            cx={center}
+            cy={center}
             r={inner / 2}
             fill="none"
             stroke={color}
@@ -79,7 +97,7 @@ export const RenderingGrabShape = ({
           />
         </>
       )}
-      {resolvedShape === "square" && (
+      {shape === "square" && (
         <>
           <rect
             x={inset}
@@ -101,7 +119,7 @@ export const RenderingGrabShape = ({
           />
         </>
       )}
-      {resolvedShape === "triangle" && (
+      {isTriangle && (
         <>
           <polygon
             points={trianglePoints}

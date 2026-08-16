@@ -43,17 +43,17 @@ const SCROLL_ARROW_OFFSET_Y = 2;
 const SCROLL_ARROW_SIZE = 16;
 
 const GRAB_SHAPE_BY_BUTTON: Record<string, GrabShape> = {
-  Left: "circle",
-  Right: "circle",
-  Middle: "triangle",
+  Left: "triangle-right",
+  Right: "triangle-left",
+  Middle: "triangle-up",
 };
 
 /**
  * Hold shape for each mouse button.
  */
 const pickingGrabShape = (button: string | null): GrabShape => {
-  if (!button) return "circle";
-  return GRAB_SHAPE_BY_BUTTON[button] ?? "circle";
+  if (!button) return "triangle-up";
+  return GRAB_SHAPE_BY_BUTTON[button] ?? "triangle-up";
 };
 
 const isMacos = platform() === "macos";

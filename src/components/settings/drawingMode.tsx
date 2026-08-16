@@ -1,3 +1,4 @@
+import { AlignmentSelector } from "@/components/ui/alignment-selector";
 import { Button } from "@/components/ui/button";
 import { ColorInput } from "@/components/ui/color-picker";
 import {
@@ -8,6 +9,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { NumberInput } from "@/components/ui/number-input";
+import { NumberScrubber } from "@/components/ui/number-input-scrub";
 import {
   Select,
   SelectContent,
@@ -17,23 +19,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   DEFAULT_STROKE_LIFETIME_SEC,
   DRAW_MODE_CLEAR_EVENT,
+  DrawToolbarLayout,
   MAX_STROKE_WIDTH,
+  MAX_TOOLBAR_OFFSET,
   MIN_STROKE_WIDTH,
+  MIN_TOOLBAR_OFFSET,
   useDrawMode,
 } from "@/stores/draw_mode";
+import { Alignment } from "@/types/style";
 import {
+  ArrowHorizontalIcon,
+  ArrowVerticalIcon,
   Cancel01Icon,
   CursorEdit01Icon,
+  Link02Icon,
   PaintBoardIcon,
+  ParagraphSpacingIcon,
+  TextAlignLeftIcon,
   Time03Icon,
+  Unlink02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const DRAW_SHORTCUT = "Ctrl+Alt+D";
 
@@ -65,6 +79,19 @@ export const DrawingMode = () => {
   );
   const showHotkeyHint = useDrawMode((state) => state.showHotkeyHint) ?? true;
   const setShowHotkeyHint = useDrawMode((state) => state.setShowHotkeyHint);
+  const toolbarLayout =
+    useDrawMode((state) => state.toolbarLayout) ?? "horizontal";
+  const toolbarAlignment =
+    useDrawMode((state) => state.toolbarAlignment) ?? "bottom-center";
+  const toolbarOffsetX = useDrawMode((state) => state.toolbarOffsetX) ?? 20;
+  const toolbarOffsetY = useDrawMode((state) => state.toolbarOffsetY) ?? 20;
+  const setToolbarLayout = useDrawMode((state) => state.setToolbarLayout);
+  const setToolbarAlignment = useDrawMode((state) => state.setToolbarAlignment);
+  const setToolbarOffsetX = useDrawMode((state) => state.setToolbarOffsetX);
+  const setToolbarOffsetY = useDrawMode((state) => state.setToolbarOffsetY);
+  const [offsetLinked, setOffsetLinked] = useState(
+    toolbarOffsetX === toolbarOffsetY,
+  );
 
   useEffect(() => {
     const unlisten = listen<boolean>("draw-mode-toggle", (event) => {
@@ -126,7 +153,7 @@ export const DrawingMode = () => {
         <ItemContent>
           <ItemTitle>Hotkey hint</ItemTitle>
           <ItemDescription>
-            Shows the shortcut note above the toolbar for 5 seconds when you
+            Shows the shortcut note next to the toolbar for 5 seconds when you
             enter draw mode
           </ItemDescription>
         </ItemContent>
@@ -134,6 +161,109 @@ export const DrawingMode = () => {
           <Switch
             checked={showHotkeyHint}
             onCheckedChange={setShowHotkeyHint}
+          />
+        </ItemActions>
+      </Item>
+
+      <h2 className="text-sm font-medium text-muted-foreground">Toolbar</h2>
+
+      <Item variant="muted">
+        <ItemContent>
+          <ItemTitle>
+            <HugeiconsIcon icon={ArrowHorizontalIcon} size="1em" /> Layout
+          </ItemTitle>
+          <ItemDescription>
+            Vertical is icon-only and sits better on the sides of the screen
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <ToggleGroup
+            size="sm"
+            type="single"
+            variant="outline"
+            value={toolbarLayout}
+            onValueChange={(value) => {
+              if (!value) return;
+              setToolbarLayout(value as DrawToolbarLayout);
+            }}
+          >
+            <ToggleGroupItem value="horizontal" aria-label="Horizontal toolbar">
+              <HugeiconsIcon icon={ArrowHorizontalIcon} strokeWidth={2} /> Row
+            </ToggleGroupItem>
+            <ToggleGroupItem value="vertical" aria-label="Vertical toolbar">
+              <HugeiconsIcon icon={ArrowVerticalIcon} strokeWidth={2} /> Column
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </ItemActions>
+      </Item>
+
+      <Item variant="muted">
+        <ItemContent className="self-start">
+          <ItemTitle>
+            <HugeiconsIcon icon={TextAlignLeftIcon} size="1em" /> Alignment
+          </ItemTitle>
+          <ItemDescription>
+            Position of the draw toolbar on the screen
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <AlignmentSelector
+            className="h-28 w-32 text-base"
+            value={toolbarAlignment}
+            onChange={(value: Alignment) => setToolbarAlignment(value)}
+          />
+        </ItemActions>
+      </Item>
+
+      <Item variant="muted">
+        <ItemContent>
+          <ItemTitle>
+            <HugeiconsIcon icon={ParagraphSpacingIcon} size="1em" /> Offset
+          </ItemTitle>
+          <ItemDescription>Space from the edge of the screen</ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <NumberScrubber
+            value={toolbarOffsetX}
+            onChange={
+              offsetLinked
+                ? (value) => {
+                    setToolbarOffsetX(value);
+                    setToolbarOffsetY(value);
+                  }
+                : setToolbarOffsetX
+            }
+            min={MIN_TOOLBAR_OFFSET}
+            max={MAX_TOOLBAR_OFFSET}
+            step={1}
+            icon={<span className="ml-0.5 text-xs font-medium">X</span>}
+            className="w-18"
+          />
+          <Toggle
+            variant="default"
+            pressed={offsetLinked}
+            onPressedChange={(pressed) => {
+              setOffsetLinked(pressed);
+              if (pressed) {
+                setToolbarOffsetY(toolbarOffsetX);
+              }
+            }}
+            aria-label="Offset linked"
+          >
+            <HugeiconsIcon
+              icon={offsetLinked ? Link02Icon : Unlink02Icon}
+              size="1em"
+            />
+          </Toggle>
+          <NumberScrubber
+            value={toolbarOffsetY}
+            onChange={setToolbarOffsetY}
+            min={MIN_TOOLBAR_OFFSET}
+            max={MAX_TOOLBAR_OFFSET}
+            step={1}
+            icon={<span className="ml-0.5 text-xs font-medium">Y</span>}
+            className="w-18"
+            disabled={offsetLinked}
           />
         </ItemActions>
       </Item>

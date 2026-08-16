@@ -1,3 +1,4 @@
+import { Alignment } from "@/types/style";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tauriStorage } from "./storage";
@@ -41,6 +42,24 @@ export const HIGHLIGHT_WIDTH_SCALE = 3;
 export const DEFAULT_STROKE_LIFETIME_SEC = 0;
 export const DEFAULT_SHOW_HOTKEY_HINT = true;
 export const HOTKEY_HINT_HIDE_MS = 5000;
+export type DrawToolbarLayout = "horizontal" | "vertical";
+export const DEFAULT_TOOLBAR_LAYOUT: DrawToolbarLayout = "horizontal";
+export const DEFAULT_TOOLBAR_ALIGNMENT: Alignment = "bottom-center";
+export const DEFAULT_TOOLBAR_OFFSET_X = 20;
+export const DEFAULT_TOOLBAR_OFFSET_Y = 20;
+export const MIN_TOOLBAR_OFFSET = 0;
+export const MAX_TOOLBAR_OFFSET = 400;
+const TOOLBAR_ALIGNMENTS: Alignment[] = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "center-left",
+  "center",
+  "center-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+];
 
 export interface DrawModeState {
   enabled: boolean;
@@ -52,6 +71,10 @@ export interface DrawModeState {
   strokeWidth: number;
   strokeLifetimeSec: number;
   showHotkeyHint: boolean;
+  toolbarLayout: DrawToolbarLayout;
+  toolbarAlignment: Alignment;
+  toolbarOffsetX: number;
+  toolbarOffsetY: number;
 }
 
 interface DrawModeActions {
@@ -63,6 +86,10 @@ interface DrawModeActions {
   setStrokeWidth: (strokeWidth: number) => void;
   setStrokeLifetimeSec: (strokeLifetimeSec: number) => void;
   setShowHotkeyHint: (showHotkeyHint: boolean) => void;
+  setToolbarLayout: (toolbarLayout: DrawToolbarLayout) => void;
+  setToolbarAlignment: (toolbarAlignment: Alignment) => void;
+  setToolbarOffsetX: (toolbarOffsetX: number) => void;
+  setToolbarOffsetY: (toolbarOffsetY: number) => void;
 }
 
 export type DrawModeStore = DrawModeState & DrawModeActions;
@@ -84,6 +111,10 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
     strokeWidth: DEFAULT_STROKE_WIDTH,
     strokeLifetimeSec: DEFAULT_STROKE_LIFETIME_SEC,
     showHotkeyHint: DEFAULT_SHOW_HOTKEY_HINT,
+    toolbarLayout: DEFAULT_TOOLBAR_LAYOUT,
+    toolbarAlignment: DEFAULT_TOOLBAR_ALIGNMENT,
+    toolbarOffsetX: DEFAULT_TOOLBAR_OFFSET_X,
+    toolbarOffsetY: DEFAULT_TOOLBAR_OFFSET_Y,
     setEnabled: (enabled) => set({ enabled, clickMode: false }),
     setClickMode: (clickMode) => set({ clickMode }),
     setDrawTool: (drawTool) => set({ drawTool, clickMode: false }),
@@ -95,6 +126,10 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
     setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
     setStrokeLifetimeSec: (strokeLifetimeSec) => set({ strokeLifetimeSec }),
     setShowHotkeyHint: (showHotkeyHint) => set({ showHotkeyHint }),
+    setToolbarLayout: (toolbarLayout) => set({ toolbarLayout }),
+    setToolbarAlignment: (toolbarAlignment) => set({ toolbarAlignment }),
+    setToolbarOffsetX: (toolbarOffsetX) => set({ toolbarOffsetX }),
+    setToolbarOffsetY: (toolbarOffsetY) => set({ toolbarOffsetY }),
   }),
   (config) =>
     persist(config, {
@@ -106,6 +141,10 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
         strokeWidth: state.strokeWidth,
         strokeLifetimeSec: state.strokeLifetimeSec,
         showHotkeyHint: state.showHotkeyHint,
+        toolbarLayout: state.toolbarLayout,
+        toolbarAlignment: state.toolbarAlignment,
+        toolbarOffsetX: state.toolbarOffsetX,
+        toolbarOffsetY: state.toolbarOffsetY,
       }),
       merge: (persisted, current) => {
         const saved =
@@ -127,6 +166,24 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
             typeof saved.showHotkeyHint === "boolean"
               ? saved.showHotkeyHint
               : current.showHotkeyHint,
+          toolbarLayout:
+            saved.toolbarLayout === "vertical" ||
+            saved.toolbarLayout === "horizontal"
+              ? saved.toolbarLayout
+              : current.toolbarLayout,
+          toolbarAlignment: TOOLBAR_ALIGNMENTS.includes(
+            saved.toolbarAlignment as Alignment,
+          )
+            ? (saved.toolbarAlignment as Alignment)
+            : current.toolbarAlignment,
+          toolbarOffsetX:
+            typeof saved.toolbarOffsetX === "number"
+              ? saved.toolbarOffsetX
+              : current.toolbarOffsetX,
+          toolbarOffsetY:
+            typeof saved.toolbarOffsetY === "number"
+              ? saved.toolbarOffsetY
+              : current.toolbarOffsetY,
         };
       },
     }),
