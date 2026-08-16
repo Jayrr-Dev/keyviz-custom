@@ -42,6 +42,7 @@ export function Visualization() {
   const monitor = useKeyStyle((state) => state.appearance.monitor);
   const onEvent = useKeyEvent((state) => state.onEvent);
   const tick = useKeyEvent((state) => state.tick);
+  const drawMode = useDrawMode((state) => state.enabled);
 
   const [isListening, setIsListening] = useState(true);
   const [keyLayout, setKeyLayout] = useState<OverlayLayout | null>(null);
@@ -51,7 +52,10 @@ export function Visualization() {
 
   useEffect(() => {
     const unlistenPromises = [
-      listen<EventPayload>("input-event", (event) => onEvent(event.payload)),
+      listen<EventPayload>("input-event", (event) => {
+        if (useDrawMode.getState().enabled) return;
+        onEvent(event.payload);
+      }),
       listenForUpdates<KeyEventStore>(KEY_EVENT_STORE, useKeyEvent.setState),
       listenForUpdates<KeyStyleStore>(KEY_STYLE_STORE, useKeyStyle.setState),
       listen<boolean>("settings-window", (event) => {
@@ -106,7 +110,7 @@ export function Visualization() {
 
   return (
     <div className="w-screen h-screen relative overflow-hidden">
-      {isListening ? (
+      {isListening && !drawMode ? (
         <>
           <MouseOverlay />
           <KeyOverlay screenStyle={keyStyle} foregroundApp={foregroundApp} />

@@ -1,8 +1,7 @@
+import { RenderingDrawToolbar } from "@/components/renderingDrawToolbar";
 import { DRAW_MODE_CLEAR_EVENT, useDrawMode } from "@/stores/draw_mode";
 import { listen } from "@tauri-apps/api/event";
 import { PointerEvent, useEffect, useRef } from "react";
-
-const DRAW_HINT = "Draw mode · Ctrl+Alt+Y to exit";
 
 interface DrawPoint {
   x: number;
@@ -100,6 +99,13 @@ export const RenderingDrawCanvas = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (enabled) return;
+    strokesRef.current = [];
+    currentRef.current = null;
+    paintingCanvas();
+  }, [enabled]);
+
   const startingStroke = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!enabled) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -142,11 +148,7 @@ export const RenderingDrawCanvas = () => {
         onPointerUp={endingStroke}
         onPointerCancel={endingStroke}
       />
-      {enabled ? (
-        <div className="absolute top-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900/90 px-4 py-1.5 text-sm font-medium text-neutral-100 shadow-md">
-          {DRAW_HINT}
-        </div>
-      ) : null}
+      {enabled ? <RenderingDrawToolbar /> : null}
     </div>
   );
 };
