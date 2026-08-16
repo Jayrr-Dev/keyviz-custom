@@ -1,15 +1,8 @@
 use std::sync::Mutex;
 
-use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 
-use crate::app::state::AppState;
-
-const DRAW_TOOLBAR_LABEL: &str = "draw-toolbar";
-const DRAW_TOOLBAR_WIDTH: f64 = 700.0;
-const DRAW_TOOLBAR_HEIGHT: f64 = 100.0;
-const DRAW_TOOLBAR_BOTTOM_GAP: f64 = 20.0;
+use crate::app::state::{AppState, ENTER_DRAW_LABEL, EXIT_DRAW_LABEL};
 
 /**
  * Opens settings, or closes them if that window is already up.
@@ -41,174 +34,71 @@ pub fn toggling_settings_window(app: &AppHandle) {
 }
 
 /**
- * Makes the overlay and toolbar match the current draw_mode / click_mode flags.
- * Window work runs on the UI thread and re-reads rust state so a stale toggle
- * cannot turn drawing back on after exit.
+ * Click-through rule for the overlay:
+ * - idle: clicks pass through
+ * - inking: overlay takes clicks so strokes land
+ * - click mode: clicks pass through except over the toolbar
  */
-pub fn syncing_draw_windows(app: &AppHandle) {
-    let handle = app.clone();
-    let _ = handle.clone().run_on_main_thread(move || {
-        let (draw_mode, click_mode) = {
-            let state = handle.state::<Mutex<AppState>>();
-            let app_state = state.lock().unwrap();
-            (app_state.draw_mode, app_state.draw_click_mode)
-        };
-        if let Some(window) = handle.get_webview_window("main") {
-            if draw_mode && !click_mode {
-                let _ = window.set_focusable(true);
-                let _ = window.set_ignore_cursor_events(false);
-                let _ = window.set_focus();
-            } else {
-                let _ = window.set_ignore_cursor_events(true);
-                let _ = window.set_focusable(false);
-            }
-        }
-        println!(
-            "[draw] sync draw_mode={} click_mode={}",
-            draw_mode, click_mode
-        );
-        let _ = handle.emit("draw-mode-toggle", draw_mode);
-        let _ = handle.emit("draw-click-mode", click_mode);
-        if draw_mode {
-            showing_draw_toolbar(&handle);
-        } else {
-            hiding_draw_toolbar(&handle);
-        }
-    });
-}
-
-/**
- * Pins the draw toolbar to the bottom of the display under the cursor.
- */
-fn placing_draw_toolbar(window: &WebviewWindow) {
-    let monitors = window.available_monitors().unwrap_or_default();
-    if monitors.is_empty() {
-        return;
+fn wanting_click_through(app_state: &AppState) -> bool {
+    if !app_state.draw_mode {
+        return true;
     }
-    let cursor = window.cursor_position().ok();
-    let monitor = cursor
-        .and_then(|point| {
-            monitors.iter().find(|row| {
-                let pos = row.position();
-                let size = row.size();
-                let x = point.x as i32;
-                let y = point.y as i32;
-                x >= pos.x
-                    && y >= pos.y
-                    && x < pos.x + size.width as i32
-                    && y < pos.y + size.height as i32
-            })
-        })
-        .or_else(|| monitors.first());
-    let Some(monitor) = monitor else {
-        return;
-    };
-    let scale = monitor.scale_factor();
-    let pos = monitor.position();
-    let size = monitor.size();
-    let current = window.outer_size().unwrap_or(PhysicalSize {
-        width: (DRAW_TOOLBAR_WIDTH * scale).round() as u32,
-        height: (DRAW_TOOLBAR_HEIGHT * scale).round() as u32,
-    });
-    let gap = (DRAW_TOOLBAR_BOTTOM_GAP * scale).round() as i32;
-    let x = pos.x + (size.width as i32 - current.width as i32) / 2;
-    let y = pos.y + size.height as i32 - current.height as i32 - gap;
-    let _ = window.set_position(PhysicalPosition { x, y });
-    raising_toolbar_z_order(window);
-}
-
-/**
- * Keeps the toolbar above the overlay without moving it.
- */
-fn raising_toolbar_z_order(window: &WebviewWindow) {
-    let _ = window.set_always_on_top(true);
-    let _ = window.set_ignore_cursor_events(false);
-
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        };
-
-        if let Ok(hwnd) = window.hwnd() {
-            let hwnd = HWND(hwnd.0 as isize);
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-            }
-        }
+    if !app_state.draw_click_mode {
+        return false;
     }
+    !app_state.cursor_over_toolbar
 }
 
 /**
- * Puts the draw toolbar back above the fullscreen overlay.
+ * Pushes the click-through rule to the overlay, skipping no-op calls.
+ * Window work runs on the UI thread.
  */
-pub fn raising_draw_toolbar(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(DRAW_TOOLBAR_LABEL) {
-        if !window.is_visible().unwrap_or(false) {
+pub fn syncing_overlay_pointer(app: &AppHandle) {
+    let click_through = {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        let wanted = wanting_click_through(&app_state);
+        if wanted == app_state.overlay_click_through {
             return;
         }
-        placing_draw_toolbar(&window);
-        let _ = window.set_ignore_cursor_events(false);
-        let _ = window.set_always_on_top(true);
-    }
-}
-
-/**
- * Builds the toolbar webview once at startup so the first toggle is instant.
- */
-pub fn building_draw_toolbar(app: &AppHandle) {
-    if app.get_webview_window(DRAW_TOOLBAR_LABEL).is_some() {
-        return;
-    }
-    let webview_url = tauri::WebviewUrl::App("index.html#/draw-toolbar".into());
-    if let Ok(window) = WebviewWindowBuilder::new(app, DRAW_TOOLBAR_LABEL, webview_url)
-        .title("Keyviz Draw")
-        .inner_size(DRAW_TOOLBAR_WIDTH, DRAW_TOOLBAR_HEIGHT)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .focused(false)
-        .visible(false)
-        .build()
-    {
-        let _ = window.set_ignore_cursor_events(false);
-    }
-}
-
-/**
- * Shows the prebuilt toolbar above the overlay.
- */
-fn showing_draw_toolbar(app: &AppHandle) {
-    building_draw_toolbar(app);
-    let Some(window) = app.get_webview_window(DRAW_TOOLBAR_LABEL) else {
-        return;
+        app_state.overlay_click_through = wanted;
+        wanted
     };
-    if window.is_visible().unwrap_or(false) {
-        raising_toolbar_z_order(&window);
-        return;
-    }
-    placing_draw_toolbar(&window);
-    let _ = window.show();
+
+    let handle = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_ignore_cursor_events(click_through);
+        }
+    });
 }
 
 /**
- * Hides the draw toolbar when draw mode ends.
+ * Applies the draw flags: overlay click-through plus a broadcast so every
+ * webview can follow. Leaving draw mode drops the stale toolbar box.
  */
-fn hiding_draw_toolbar(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(DRAW_TOOLBAR_LABEL) {
-        let _ = window.hide();
-    }
+pub fn syncing_draw_mode(app: &AppHandle) {
+    let (draw_mode, click_mode) = {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        if !app_state.draw_mode {
+            app_state.toolbar_rect = None;
+            app_state.cursor_over_toolbar = false;
+        }
+        if let Some(item) = &app_state.draw_tray_item {
+            let label = if app_state.draw_mode {
+                EXIT_DRAW_LABEL
+            } else {
+                ENTER_DRAW_LABEL
+            };
+            let _ = item.set_text(label);
+        }
+        (app_state.draw_mode, app_state.draw_click_mode)
+    };
+
+    syncing_overlay_pointer(app);
+    let _ = app.emit("draw-mode-toggle", draw_mode);
+    let _ = app.emit("draw-click-mode", click_mode);
 }
 
 pub fn config_window(window: &tauri::WebviewWindow) {
@@ -262,4 +152,32 @@ pub fn config_window(window: &tauri::WebviewWindow) {
     }
 
     window.show().expect("Failed to show window");
+}
+
+/**
+ * Starts a new Keyviz process after this one exits.
+ * A short delay avoids the single-instance plugin blocking the relaunch.
+ */
+pub fn restarting_app() {
+    let Ok(exe) = std::env::current_exe() else {
+        std::process::exit(0);
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let command = format!(
+            "ping 127.0.0.1 -n 2 >nul & start \"\" \"{}\"",
+            exe.display()
+        );
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", &command])
+            .spawn();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+
+    std::process::exit(0);
 }

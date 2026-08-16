@@ -11,13 +11,14 @@ use tauri::{
 mod app;
 use app::commands::{
     log, reading_draw_state, reading_foreground_app, set_draw_click_mode, set_draw_mode,
-    set_main_window_monitor, set_toggle_shortcut,
+    set_draw_typing,
+    set_main_window_monitor, set_toggle_shortcut, setting_toolbar_rect,
     spanning_all_monitors,
 };
 use app::event::start_listener;
 use app::state::AppState;
 use app::window::{
-    building_draw_toolbar, config_window, syncing_draw_windows, toggling_settings_window,
+    config_window, restarting_app, syncing_draw_mode, toggling_settings_window,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -41,13 +42,22 @@ pub fn run() {
                 spanning_all_monitors(&window, None, &mut app_state);
             }
 
-            building_draw_toolbar(&app_handle);
-
             // tray actions
             let toggle_item = MenuItem::with_id(app, "toggle", "Stop", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let exit_draw_item =
-                MenuItem::with_id(app, "exit-draw", "Exit draw mode", true, None::<&str>)?;
+            let draw_item = MenuItem::with_id(
+                app,
+                "toggle-draw",
+                app::state::ENTER_DRAW_LABEL,
+                true,
+                None::<&str>,
+            )?;
+            {
+                let state = app.state::<Mutex<AppState>>();
+                let mut app_state = state.lock().unwrap();
+                app_state.draw_tray_item = Some(draw_item.clone());
+            }
+            let restart_item = MenuItem::with_id(app, "restart", "Restart", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
             // start global input listener
@@ -56,7 +66,13 @@ pub fn run() {
             // setup tray menu
             let menu = Menu::with_items(
                 app,
-                &[&toggle_item, &settings_item, &exit_draw_item, &quit_item],
+                &[
+                    &toggle_item,
+                    &settings_item,
+                    &draw_item,
+                    &restart_item,
+                    &quit_item,
+                ],
             )?;
             let _ = TrayIconBuilder::with_id("keyviz-tray")
                 .icon(Image::from(include_image!("icons/tray.png")))
@@ -71,15 +87,21 @@ pub fn run() {
                     "settings" => {
                         toggling_settings_window(app);
                     }
-                    "exit-draw" => {
+                    "toggle-draw" => {
                         {
                             let state = app.state::<Mutex<AppState>>();
                             let mut app_state = state.lock().unwrap();
-                            app_state.draw_mode = false;
-                            app_state.draw_click_mode = false;
+                            app_state.draw_mode = !app_state.draw_mode;
+                            if !app_state.draw_mode {
+                                app_state.draw_click_mode = false;
+                                app_state.draw_typing = false;
+                            }
+                            app_state.draw_toggled_at =
+                                Some(std::time::Instant::now());
                         }
-                        syncing_draw_windows(app);
+                        syncing_draw_mode(app);
                     }
+                    "restart" => restarting_app(),
                     "quit" => std::process::exit(0),
                     _ => println!("um... what?"),
                 })
@@ -106,7 +128,9 @@ pub fn run() {
             set_toggle_shortcut,
             set_draw_mode,
             set_draw_click_mode,
+            set_draw_typing,
             set_main_window_monitor,
+            setting_toolbar_rect,
             reading_draw_state,
             reading_foreground_app
         ])

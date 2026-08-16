@@ -7,7 +7,6 @@ import { Toaster } from "./components/ui/sonner";
 import { Visualization } from "./pages/visualization";
 
 const Settings = lazy(() => import("./pages/settings"));
-const HostingDrawToolbar = lazy(() => import("./pages/hostingDrawToolbar"));
 
 function App() {
   return (
@@ -15,7 +14,6 @@ function App() {
       <Suspense fallback={<div>Loading...</div>}>
         <Routes>
           <Route path="/" element={<Visualization />} />
-          <Route path="/draw-toolbar" element={<HostingDrawToolbar />} />
           <Route
             path="/settings"
             element={

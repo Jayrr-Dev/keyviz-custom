@@ -1,3 +1,4 @@
+import { AnchoringDrawToolbar } from "@/components/anchoringDrawToolbar";
 import { KeyOverlay } from "@/components/key-overlay";
 import { MouseOverlay } from "@/components/mouse-overlay";
 import { RenderingDrawCanvas } from "@/components/renderingDrawCanvas";
@@ -122,6 +123,7 @@ export function Visualization() {
         </>
       ) : null}
       <RenderingDrawCanvas />
+      <AnchoringDrawToolbar />
     </div>
   );
 }

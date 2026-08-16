@@ -7,11 +7,11 @@ import {
 } from "@/stores/draw_mode";
 import {
   ArrowUpRight01Icon,
-  Cancel01Icon,
   Circle,
   Cursor01Icon,
-  CursorEdit01Icon,
+  HighlighterIcon,
   Pen01Icon,
+  TextFontIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,20 +21,26 @@ import { useEffect, useState } from "react";
 const DRAW_HINT = "Hold right-click to erase. Escape or Ctrl+Alt+D to exit";
 const CLICK_HINT = "Click mode. Drawings stay. Press Draw to ink again";
 
-const DRAW_COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#fafafa"];
+const DRAW_COLORS = [
+  "#ef4444",
+  "#f59e0b",
+  "#22c55e",
+  "#3b82f6",
+  "#fafafa",
+  "#737373",
+  "#000000",
+];
 
-const DRAW_WIDTHS = [3, 6, 12];
+const DRAW_WIDTHS = [2, 4, 8];
 
 /** Single row that never wraps, so the window size stays stable. */
 const TOOLBAR_SHELL =
   "flex w-max flex-nowrap items-center gap-1.5 rounded-xl border border-white/20 bg-neutral-900 px-2 py-1.5 shadow-2xl";
 
-const TOOLBAR_HOST = "inline-flex w-max flex-col items-center gap-1.5";
+const TOOLBAR_HOST = "relative inline-flex w-max flex-col items-center";
 
 const HINT_SHELL =
-  "whitespace-nowrap rounded-full bg-neutral-950 px-3 py-1 text-xs font-medium text-white shadow-lg";
-
-const HINT_STACK = "grid justify-items-center";
+  "pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-neutral-950 px-3 py-1 text-xs font-medium text-white shadow-lg";
 
 const ICON_BUTTON_ACTIVE =
   "flex size-7 items-center justify-center rounded-lg bg-neutral-700 text-white";
@@ -56,9 +62,11 @@ const SQUARE_GLYPH_STROKE = 1.5;
 const DRAW_INK_TOOLS: {
   id: DrawInkTool;
   label: string;
-  icon: typeof CursorEdit01Icon | null;
+  icon: typeof Pen01Icon | null;
 }[] = [
   { id: "pen", label: "Pen", icon: Pen01Icon },
+  { id: "type", label: "Type", icon: TextFontIcon },
+  { id: "highlight", label: "Highlight", icon: HighlighterIcon },
   { id: "arrow", label: "Arrow", icon: ArrowUpRight01Icon },
   { id: "square", label: "Square", icon: null },
   { id: "circle", label: "Circle", icon: Circle },
@@ -90,14 +98,7 @@ const RenderingSquareGlyph = ({ size }: { size: number }) => {
 };
 
 /**
- * Stops a toolbar click from starting a stroke on the canvas.
- */
-const stoppingCanvasDraw = (event: { stopPropagation: () => void }) => {
-  event.stopPropagation();
-};
-
-/**
- * Draw tools. Lives in its own window so Click mode can still use it.
+ * Draw tools, rendered on the overlay above the ink canvas.
  */
 export const RenderingDrawToolbar = () => {
   const color = useDrawMode((state) => state.color);
@@ -106,7 +107,6 @@ export const RenderingDrawToolbar = () => {
   const drawTool = useDrawMode((state) => state.drawTool);
   const setColor = useDrawMode((state) => state.setColor);
   const setStrokeWidth = useDrawMode((state) => state.setStrokeWidth);
-  const setEnabled = useDrawMode((state) => state.setEnabled);
   const setClickMode = useDrawMode((state) => state.setClickMode);
   const setDrawTool = useDrawMode((state) => state.setDrawTool);
   const showHotkeyHint = useDrawMode((state) => state.showHotkeyHint) ?? true;
@@ -129,8 +129,6 @@ export const RenderingDrawToolbar = () => {
   };
 
   const exitingDrawMode = () => {
-    void invoke("log", { message: "exit-source: toolbar-button" });
-    setEnabled(false);
     invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
   };
 
@@ -152,33 +150,22 @@ export const RenderingDrawToolbar = () => {
   return (
     <div className={TOOLBAR_HOST}>
       {hintVisible ? (
-        <div className={HINT_STACK}>
-          <div
-            className={`${HINT_SHELL} col-start-1 row-start-1 ${clickMode ? "invisible" : ""}`}
-          >
-            {DRAW_HINT}
-          </div>
-          <div
-            className={`${HINT_SHELL} col-start-1 row-start-1 ${clickMode ? "" : "invisible"}`}
-          >
-            {CLICK_HINT}
-          </div>
+        <div className={HINT_SHELL}>
+          {clickMode ? CLICK_HINT : DRAW_HINT}
         </div>
       ) : null}
-      <div className={TOOLBAR_SHELL} onPointerDown={stoppingCanvasDraw}>
+      <div className={TOOLBAR_SHELL}>
         <button
           type="button"
-          title="Draw"
           aria-label="Draw"
           onClick={pickingDrawTool}
           className={clickMode ? TEXT_BUTTON_IDLE : TEXT_BUTTON_ACTIVE}
         >
-          <HugeiconsIcon icon={CursorEdit01Icon} size={ICON_SIZE} />
+          <HugeiconsIcon icon={Pen01Icon} size={ICON_SIZE} />
           Draw
         </button>
         <button
           type="button"
-          title="Click through"
           aria-label="Click through"
           onClick={pickingClickTool}
           className={clickMode ? TEXT_BUTTON_ACTIVE : TEXT_BUTTON_IDLE}
@@ -193,7 +180,6 @@ export const RenderingDrawToolbar = () => {
           <button
             key={tool.id}
             type="button"
-            title={tool.label}
             aria-label={tool.label}
             onClick={() => pickingInkTool(tool.id)}
             className={
@@ -216,7 +202,6 @@ export const RenderingDrawToolbar = () => {
           <button
             key={swatch}
             type="button"
-            title={`Ink ${swatch}`}
             aria-label={`Ink ${swatch}`}
             onClick={() => setColor(swatch)}
             className={
@@ -234,7 +219,6 @@ export const RenderingDrawToolbar = () => {
           <button
             key={width}
             type="button"
-            title={`Stroke ${width}`}
             aria-label={`Stroke ${width}`}
             onClick={() => setStrokeWidth(width)}
             className={
@@ -252,17 +236,14 @@ export const RenderingDrawToolbar = () => {
 
         <button
           type="button"
-          title="Clear drawings"
           aria-label="Clear drawings"
           onClick={clearingDrawings}
           className={TEXT_BUTTON_IDLE}
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={ICON_SIZE} />
           Clear
         </button>
         <button
           type="button"
-          title="Exit draw mode"
           aria-label="Exit draw mode"
           onClick={exitingDrawMode}
           className="flex h-7 items-center rounded-lg bg-white px-2.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-200"

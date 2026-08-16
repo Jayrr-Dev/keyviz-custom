@@ -5,7 +5,7 @@ use serde::Serialize;
 use tauri::{menu::MenuItem, AppHandle, Emitter, Manager, Wry};
 
 use crate::app::state::AppState;
-use crate::app::window::{syncing_draw_windows, toggling_settings_window};
+use crate::app::window::{syncing_draw_mode, syncing_overlay_pointer, toggling_settings_window};
 
 const SHORTCUT_CTRL_KEYS: [&str; 2] = ["ControlLeft", "ControlRight"];
 const SHORTCUT_ALT_KEYS: [&str; 2] = ["Alt", "AltGr"];
@@ -36,18 +36,25 @@ fn updating_shortcut_latches(
     if matching_ctrl_alt_key(&app_state.pressed_keys, DRAW_MODE_KEY) {
         if !app_state.draw_shortcut_latched {
             app_state.draw_shortcut_latched = true;
-            let allowed = allowing_draw_toggle(app_state);
-            println!(
-                "[draw] combo hit keys={:?} allowed={} draw_mode={} -> {}",
-                app_state.pressed_keys, allowed, app_state.draw_mode, !app_state.draw_mode
-            );
-            if allowed {
+            if allowing_draw_toggle(app_state) {
                 app_state.draw_mode = !app_state.draw_mode;
                 app_state.draw_click_mode = false;
                 *draw_sync = true;
             }
         }
     } else {
+        app_state.draw_shortcut_latched = false;
+    }
+}
+
+/**
+ * Drops latches when Ctrl+Alt+key is no longer held. Release never toggles.
+ */
+fn clearing_shortcut_latches(app_state: &mut AppState) {
+    if !matching_ctrl_alt_key(&app_state.pressed_keys, SETTINGS_KEY) {
+        app_state.settings_shortcut_latched = false;
+    }
+    if !matching_ctrl_alt_key(&app_state.pressed_keys, DRAW_MODE_KEY) {
         app_state.draw_shortcut_latched = false;
     }
 }
@@ -116,6 +123,7 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
         if let Err(err) = listen(move |event| {
             let mut settings_toggle = false;
             let mut draw_sync = false;
+            let mut pointer_sync = false;
             let listening;
             let mut already_pressed = false;
             let mut key_releases: Option<Vec<String>> = None;
@@ -137,13 +145,15 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
 
                     if !already_pressed
                         && app_state.draw_mode
+                        && !app_state.draw_typing
                         && key_name == DRAW_EXIT_KEY
                     {
                         app_state.draw_mode = false;
                         app_state.draw_click_mode = false;
+                        app_state.draw_typing = false;
                         app_state.draw_toggled_at = Some(std::time::Instant::now());
                         draw_sync = true;
-                    } else {
+                    } else if !already_pressed {
                         updating_shortcut_latches(
                             &mut app_state,
                             &mut settings_toggle,
@@ -164,11 +174,13 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                         return;
                     }
                     app_state.pressed_keys.retain(|k| k != &key_name);
-                    updating_shortcut_latches(
-                        &mut app_state,
-                        &mut settings_toggle,
-                        &mut draw_sync,
-                    );
+                    clearing_shortcut_latches(&mut app_state);
+                } else if let EventType::MouseMove { x, y } = event.event_type {
+                    let over = app_state.touching_toolbar(x, y);
+                    if over != app_state.cursor_over_toolbar {
+                        app_state.cursor_over_toolbar = over;
+                        pointer_sync = app_state.draw_mode && app_state.draw_click_mode;
+                    }
                 }
 
                 listening = app_state.listening;
@@ -179,7 +191,10 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                 toggling_settings_window(&app_handle);
             }
             if draw_sync {
-                syncing_draw_windows(&app_handle);
+                syncing_draw_mode(&app_handle);
+            }
+            if pointer_sync {
+                syncing_overlay_pointer(&app_handle);
             }
             if let Some(names) = key_releases {
                 for name in names {

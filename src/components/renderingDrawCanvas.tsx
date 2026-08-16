@@ -1,13 +1,13 @@
 import {
   DRAW_MODE_CLEAR_EVENT,
   DrawInkTool,
+  HIGHLIGHT_OPACITY,
+  HIGHLIGHT_WIDTH_SCALE,
   useDrawMode,
 } from "@/stores/draw_mode";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { PointerEvent, useEffect, useRef } from "react";
-
-const EXIT_KEY = "Escape";
+import { KeyboardEvent, PointerEvent, useEffect, useRef, useState } from "react";
 
 const ERASE_BUTTON = 2;
 const ERASE_RADIUS_PADDING = 10;
@@ -22,6 +22,13 @@ const STROKE_FADE_MS = 320;
 const ARROW_HEAD_MIN = 12;
 const ARROW_HEAD_WIDTH_SCALE = 4;
 const SHAPE_HIT_STEPS = 32;
+const TEXT_FONT_FAMILY = "Segoe UI, sans-serif";
+const TEXT_SIZE_SCALE = 6;
+const TEXT_SIZE_MIN = 14;
+const TEXT_LINE_HEIGHT = 1.25;
+const TEXT_CHAR_WIDTH = 0.62;
+const TEXT_INPUT_MIN_WIDTH = 160;
+const TEXT_INPUT_PADDING = 4;
 
 interface DrawPoint {
   x: number;
@@ -33,7 +40,14 @@ interface DrawStroke {
   color: string;
   width: number;
   points: DrawPoint[];
+  text?: string;
   finishedAt: number | null;
+}
+
+interface TypeDraft {
+  x: number;
+  y: number;
+  text: string;
 }
 
 interface EraseTrailPoint extends DrawPoint {
@@ -79,6 +93,31 @@ const distancingPointToSegment = (
     point.x - (start.x + amount * deltaX),
     point.y - (start.y + amount * deltaY),
   );
+};
+
+/**
+ * Font size for Type strokes, tied to the current stroke width.
+ */
+const readingTextSize = (width: number) =>
+  Math.max(TEXT_SIZE_MIN, width * TEXT_SIZE_SCALE);
+
+/**
+ * Approximate box used to erase Type strokes.
+ */
+const readingTextHitBox = (stroke: DrawStroke) => {
+  const origin = stroke.points[0] ?? { x: 0, y: 0 };
+  const size = readingTextSize(stroke.width);
+  const lines = (stroke.text ?? "").split("\n");
+  const longest = lines.reduce(
+    (max, line) => Math.max(max, line.length),
+    1,
+  );
+  return {
+    left: origin.x,
+    top: origin.y,
+    width: longest * size * TEXT_CHAR_WIDTH,
+    height: lines.length * size * TEXT_LINE_HEIGHT,
+  };
 };
 
 /**
@@ -164,7 +203,20 @@ const hittingStroke = (
   point: DrawPoint,
   radius: number,
 ) => {
-  const hitRadius = radius + stroke.width / 2;
+  if (stroke.kind === "type") {
+    const box = readingTextHitBox(stroke);
+    return (
+      point.x >= box.left - radius &&
+      point.x <= box.left + box.width + radius &&
+      point.y >= box.top - radius &&
+      point.y <= box.top + box.height + radius
+    );
+  }
+  const strokeWidth =
+    stroke.kind === "highlight"
+      ? stroke.width * HIGHLIGHT_WIDTH_SCALE
+      : stroke.width;
+  const hitRadius = radius + strokeWidth / 2;
   const points = listingShapeHitPoints(stroke);
   if (points.length === 1) {
     return (
@@ -248,12 +300,20 @@ const paintingStrokes = (
       }
     }
     context.save();
-    context.globalAlpha = alpha;
+    if (stroke.kind === "type") {
+      paintingTypeStroke(context, stroke, alpha);
+      context.restore();
+      continue;
+    }
+    const isHighlight = stroke.kind === "highlight";
+    context.globalAlpha = isHighlight ? alpha * HIGHLIGHT_OPACITY : alpha;
     context.strokeStyle = stroke.color;
-    context.lineWidth = stroke.width;
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    if (stroke.kind && stroke.kind !== "pen") {
+    context.lineWidth = isHighlight
+      ? stroke.width * HIGHLIGHT_WIDTH_SCALE
+      : stroke.width;
+    context.lineCap = isHighlight ? "square" : "round";
+    context.lineJoin = isHighlight ? "miter" : "round";
+    if (stroke.kind && stroke.kind !== "pen" && stroke.kind !== "highlight") {
       strokingShape(context, stroke);
     } else {
       context.beginPath();
@@ -268,6 +328,27 @@ const paintingStrokes = (
     }
     context.restore();
   }
+};
+
+/**
+ * Paints a committed Type stroke.
+ */
+const paintingTypeStroke = (
+  context: CanvasRenderingContext2D,
+  stroke: DrawStroke,
+  alpha: number,
+) => {
+  const origin = stroke.points[0];
+  if (!origin || !stroke.text) return;
+  const size = readingTextSize(stroke.width);
+  context.globalAlpha = alpha;
+  context.fillStyle = stroke.color;
+  context.font = `${size}px ${TEXT_FONT_FAMILY}`;
+  context.textBaseline = "top";
+  const lines = stroke.text.split("\n");
+  lines.forEach((line, index) => {
+    context.fillText(line, origin.x, origin.y + index * size * TEXT_LINE_HEIGHT);
+  });
 };
 
 /**
@@ -355,6 +436,8 @@ export const RenderingDrawCanvas = () => {
     useDrawMode((state) => state.strokeLifetimeSec) ?? 0;
   const clickMode = useDrawMode((state) => state.clickMode);
   const drawTool = useDrawMode((state) => state.drawTool);
+  const [typeDraft, setTypeDraft] = useState<TypeDraft | null>(null);
+  const typeInputRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<DrawStroke[]>([]);
   const currentRef = useRef<DrawStroke | null>(null);
@@ -440,6 +523,8 @@ export const RenderingDrawCanvas = () => {
       strokesRef.current = [];
       currentRef.current = null;
       eraseTrailRef.current = [];
+      setTypeDraft(null);
+      invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
       paintingCanvas();
     });
     return () => {
@@ -457,23 +542,13 @@ export const RenderingDrawCanvas = () => {
     strokesRef.current = [];
     currentRef.current = null;
     eraseTrailRef.current = [];
+    setTypeDraft(null);
+    invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
     if (eraseFrameRef.current != null) {
       cancelAnimationFrame(eraseFrameRef.current);
       eraseFrameRef.current = null;
     }
     paintingCanvas();
-  }, [enabled]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const exitingOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== EXIT_KEY) return;
-      event.preventDefault();
-      void invoke("log", { message: "exit-source: escape" });
-      invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
-    };
-    window.addEventListener("keydown", exitingOnEscape);
-    return () => window.removeEventListener("keydown", exitingOnEscape);
   }, [enabled]);
 
   /**
@@ -510,16 +585,66 @@ export const RenderingDrawCanvas = () => {
     schedulingCanvasTick();
   };
 
+  /**
+   * Writes the open Type field onto the canvas.
+   */
+  const committingTypeDraft = (draft: TypeDraft | null) => {
+    if (!draft) return;
+    const text = draft.text.replace(/\s+$/g, "");
+    invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
+    setTypeDraft(null);
+    if (!text) return;
+    strokesRef.current = [
+      ...strokesRef.current,
+      {
+        kind: "type",
+        color,
+        width: strokeWidth,
+        points: [{ x: draft.x, y: draft.y }],
+        text,
+        finishedAt: performance.now(),
+      },
+    ];
+    paintingCanvas();
+    if (strokeLifetimeRef.current > 0) {
+      schedulingCanvasTick();
+    }
+  };
+
+  /**
+   * Opens a Type field at the click. Escape cancels; Enter commits.
+   */
+  const startingTypeDraft = (point: DrawPoint) => {
+    committingTypeDraft(typeDraft);
+    setTypeDraft({ x: point.x, y: point.y, text: "" });
+    invoke("set_draw_typing", { enabled: true }).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    if (!typeDraft) return;
+    typeInputRef.current?.focus();
+  }, [typeDraft]);
+
+  useEffect(() => {
+    if (drawTool === "type" && !clickMode) return;
+    committingTypeDraft(typeDraft);
+  }, [drawTool, clickMode]);
+
   const startingStroke = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!enabled || clickMode) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
     if (event.button === ERASE_BUTTON) {
+      committingTypeDraft(typeDraft);
       currentRef.current = null;
       erasingRef.current = true;
       wipingAtPoint(readingCanvasPoint(event));
       return;
     }
+    if (drawTool === "type") {
+      startingTypeDraft(readingCanvasPoint(event));
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
     erasingRef.current = false;
     currentRef.current = {
       kind: drawTool,
@@ -538,9 +663,12 @@ export const RenderingDrawCanvas = () => {
       wipingAtPoint(readingCanvasPoint(event));
       return;
     }
-    if (!currentRef.current) return;
+    if (!currentRef.current || currentRef.current.kind === "type") return;
     const nextPoint = readingCanvasPoint(event);
-    if (currentRef.current.kind === "pen") {
+    if (
+      currentRef.current.kind === "pen" ||
+      currentRef.current.kind === "highlight"
+    ) {
       currentRef.current.points.push(nextPoint);
     } else {
       currentRef.current.points = [currentRef.current.points[0], nextPoint];
@@ -573,6 +701,22 @@ export const RenderingDrawCanvas = () => {
     event.preventDefault();
   };
 
+  const handlingTypeKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setTypeDraft(null);
+      invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      committingTypeDraft(typeDraft ? { ...typeDraft, text: event.currentTarget.value } : null);
+    }
+  };
+
+  const typeSize = readingTextSize(strokeWidth);
+
   return (
     <div
       className={
@@ -590,6 +734,30 @@ export const RenderingDrawCanvas = () => {
         onPointerCancel={endingStroke}
         onContextMenu={blockingContextMenu}
       />
+      {typeDraft ? (
+        <textarea
+          ref={typeInputRef}
+          value={typeDraft.text}
+          aria-label="Type on screen"
+          onChange={(event) =>
+            setTypeDraft({ ...typeDraft, text: event.target.value })
+          }
+          onKeyDown={handlingTypeKey}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute z-50 resize-none bg-transparent outline-none"
+          style={{
+            left: typeDraft.x,
+            top: typeDraft.y,
+            minWidth: TEXT_INPUT_MIN_WIDTH,
+            padding: TEXT_INPUT_PADDING,
+            color,
+            caretColor: color,
+            fontFamily: TEXT_FONT_FAMILY,
+            fontSize: typeSize,
+            lineHeight: TEXT_LINE_HEIGHT,
+          }}
+        />
+      ) : null}
     </div>
   );
 };

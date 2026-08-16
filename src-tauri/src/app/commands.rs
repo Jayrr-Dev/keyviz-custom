@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Instant;
 
 use serde::Serialize;
 use tauri::{Manager, WebviewWindow};
@@ -6,7 +7,7 @@ use tauri::{Manager, WebviewWindow};
 #[cfg(not(target_os = "windows"))]
 use tauri::{PhysicalPosition, PhysicalSize};
 
-use crate::app::state::AppState;
+use crate::app::state::{AppState, ToolbarRect};
 
 /// Key-overlay box inside the spanning visualization window, in physical pixels.
 #[derive(Clone, Serialize)]
@@ -51,20 +52,20 @@ pub fn reading_draw_state(app: tauri::AppHandle) -> DrawState {
 /// Turns draw mode on or off from Settings.
 #[tauri::command]
 pub fn set_draw_mode(app: tauri::AppHandle, enabled: bool) {
-    println!("[draw] set_draw_mode({})", enabled);
     {
         let state = app.state::<Mutex<AppState>>();
         let mut app_state = state.lock().unwrap();
         app_state.draw_mode = enabled;
         app_state.draw_click_mode = false;
+        app_state.draw_typing = false;
+        app_state.draw_toggled_at = Some(Instant::now());
     }
-    crate::app::window::syncing_draw_windows(&app);
+    crate::app::window::syncing_draw_mode(&app);
 }
 
 /// Click mode keeps drawings and lets the mouse through to other apps.
 #[tauri::command]
 pub fn set_draw_click_mode(app: tauri::AppHandle, enabled: bool) {
-    println!("[draw] set_draw_click_mode({})", enabled);
     {
         let state = app.state::<Mutex<AppState>>();
         let mut app_state = state.lock().unwrap();
@@ -72,8 +73,35 @@ pub fn set_draw_click_mode(app: tauri::AppHandle, enabled: bool) {
             return;
         }
         app_state.draw_click_mode = enabled;
+        if enabled {
+            app_state.draw_typing = false;
+        }
     }
-    crate::app::window::syncing_draw_windows(&app);
+    crate::app::window::syncing_draw_mode(&app);
+}
+
+/// Escape exits draw mode unless a Type field is open.
+#[tauri::command]
+pub fn set_draw_typing(app: tauri::AppHandle, enabled: bool) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut app_state = state.lock().unwrap();
+    app_state.draw_typing = enabled && app_state.draw_mode;
+}
+
+/// Toolbar box reported by the overlay webview, in window physical pixels.
+/// Click mode uses it to keep the toolbar clickable while the rest of the
+/// overlay passes clicks through.
+#[tauri::command]
+pub fn setting_toolbar_rect(app: tauri::AppHandle, rect: Option<ToolbarRect>) {
+    {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        app_state.toolbar_rect = rect;
+        if rect.is_none() {
+            app_state.cursor_over_toolbar = false;
+        }
+    }
+    crate::app::window::syncing_overlay_pointer(&app);
 }
 
 /// Spans the overlay across every display. `monitor_name` only places the keycaps.
@@ -88,7 +116,6 @@ pub fn set_main_window_monitor(
         let mut app_state = state.lock().unwrap();
         spanning_all_monitors(&window, monitor_name.as_deref(), &mut app_state)
     };
-    crate::app::window::raising_draw_toolbar(&app);
     layout
 }
 

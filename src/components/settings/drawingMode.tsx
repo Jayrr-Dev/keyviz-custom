@@ -76,7 +76,6 @@ export const DrawingMode = () => {
   }, [setEnabled]);
 
   const togglingDrawMode = (next: boolean) => {
-    void invoke("log", { message: `exit-source: settings-switch ${next}` });
     setEnabled(next);
     invoke("set_draw_mode", { enabled: next }).catch(() => undefined);
   };
@@ -95,9 +94,9 @@ export const DrawingMode = () => {
             <HugeiconsIcon icon={CursorEdit01Icon} size="1em" /> Draw on screen
           </ItemTitle>
           <ItemDescription>
-            Click and drag on the overlay. Hold right-click to erase. Use Click
-            on the toolbar to use other apps without losing your drawings.{" "}
-            {DRAW_SHORTCUT} or Escape turns it off.
+            Click and drag on the overlay. Type places text. Hold right-click to
+            erase. Use Click on the toolbar to use other apps without losing
+            your drawings. {DRAW_SHORTCUT} or Escape turns it off.
           </ItemDescription>
         </ItemContent>
         <ItemActions>
