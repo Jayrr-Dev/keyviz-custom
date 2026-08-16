@@ -216,7 +216,13 @@ const matchingPatternValue = (pattern: string, token: string) => {
   return false;
 };
 
-const buildingComboVariables = (pattern: string, captured: string) => {
+/**
+ * Template values for a matched (char), (digit), or (key) token.
+ */
+const buildingComboVariables = (
+  pattern: string,
+  captured: string,
+): Record<string, string> => {
   if (pattern === "char") {
     const letter = captured.toUpperCase();
     return { char: letter, letter };
