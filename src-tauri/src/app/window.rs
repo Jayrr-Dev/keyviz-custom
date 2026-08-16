@@ -3,8 +3,8 @@ use tauri::{
 };
 
 const DRAW_TOOLBAR_LABEL: &str = "draw-toolbar";
-const DRAW_TOOLBAR_WIDTH: f64 = 620.0;
-const DRAW_TOOLBAR_HEIGHT: f64 = 128.0;
+const DRAW_TOOLBAR_WIDTH: f64 = 700.0;
+const DRAW_TOOLBAR_HEIGHT: f64 = 100.0;
 const DRAW_TOOLBAR_BOTTOM_GAP: f64 = 20.0;
 
 /**
@@ -107,12 +107,13 @@ fn placing_draw_toolbar(window: &WebviewWindow) {
     let scale = monitor.scale_factor();
     let pos = monitor.position();
     let size = monitor.size();
-    let width = (DRAW_TOOLBAR_WIDTH * scale).round() as u32;
-    let height = (DRAW_TOOLBAR_HEIGHT * scale).round() as u32;
+    let current = window.outer_size().unwrap_or(PhysicalSize {
+        width: (DRAW_TOOLBAR_WIDTH * scale).round() as u32,
+        height: (DRAW_TOOLBAR_HEIGHT * scale).round() as u32,
+    });
     let gap = (DRAW_TOOLBAR_BOTTOM_GAP * scale).round() as i32;
-    let x = pos.x + (size.width as i32 - width as i32) / 2;
-    let y = pos.y + size.height as i32 - height as i32 - gap;
-    let _ = window.set_size(PhysicalSize { width, height });
+    let x = pos.x + (size.width as i32 - current.width as i32) / 2;
+    let y = pos.y + size.height as i32 - current.height as i32 - gap;
     let _ = window.set_position(PhysicalPosition { x, y });
 
     #[cfg(target_os = "windows")]

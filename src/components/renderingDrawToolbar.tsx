@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   DRAW_MODE_CLEAR_EVENT,
@@ -22,22 +21,32 @@ import { useEffect, useState } from "react";
 const DRAW_HINT = "Hold right-click to erase. Escape or Ctrl+Alt+D to exit";
 const CLICK_HINT = "Click mode. Drawings stay. Press Draw to ink again";
 
-const MODE_BUTTON_ACTIVE =
-  "flex items-center gap-1 rounded-lg bg-neutral-700 px-2.5 py-1 text-sm text-white";
-const MODE_BUTTON_IDLE =
-  "flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm text-neutral-400 hover:bg-neutral-700/70 hover:text-neutral-100";
-
 const DRAW_COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#fafafa"];
 
 const DRAW_WIDTHS = [3, 6, 12];
 
+/** Single row that never wraps, so the window size stays stable. */
 const TOOLBAR_SHELL =
-  "flex items-center gap-2 rounded-xl border border-white/20 bg-neutral-900 px-3 py-2 shadow-2xl";
+  "flex w-max flex-nowrap items-center gap-1.5 rounded-xl border border-white/20 bg-neutral-900 px-2 py-1.5 shadow-2xl";
 
-const TOOLBAR_HOST =
-  "flex w-full flex-col items-center justify-end pointer-events-none";
+const TOOLBAR_HOST = "inline-flex w-max flex-col items-center gap-1.5";
 
-const TOOLBAR_STACK = "flex flex-col items-center gap-2 pointer-events-auto";
+const HINT_SHELL =
+  "whitespace-nowrap rounded-full bg-neutral-950 px-3 py-1 text-xs font-medium text-white shadow-lg";
+
+const ICON_BUTTON_ACTIVE =
+  "flex size-7 items-center justify-center rounded-lg bg-neutral-700 text-white";
+const ICON_BUTTON_IDLE =
+  "flex size-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-700/70 hover:text-neutral-100";
+
+const TEXT_BUTTON_ACTIVE =
+  "flex h-7 items-center gap-1 rounded-lg bg-neutral-700 px-2 text-xs font-medium text-white";
+const TEXT_BUTTON_IDLE =
+  "flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-neutral-400 hover:bg-neutral-700/70 hover:text-neutral-100";
+
+const SEPARATOR = "h-5 bg-white/15";
+
+const ICON_SIZE = 14;
 
 const DRAW_INK_TOOLS: {
   id: DrawInkTool;
@@ -111,99 +120,109 @@ export const RenderingDrawToolbar = () => {
 
   return (
     <div className={TOOLBAR_HOST}>
-      <div className={TOOLBAR_STACK}>
-        {hintVisible ? (
-          <div className="rounded-full bg-neutral-950 px-4 py-1.5 text-sm font-medium text-white shadow-lg">
-            {clickMode ? CLICK_HINT : DRAW_HINT}
-          </div>
-        ) : null}
-        <div className={TOOLBAR_SHELL} onPointerDown={stoppingCanvasDraw}>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              aria-label="Draw"
-              onClick={pickingDrawTool}
-              className={clickMode ? MODE_BUTTON_IDLE : MODE_BUTTON_ACTIVE}
-            >
-              <HugeiconsIcon icon={CursorEdit01Icon} size={14} />
-              Draw
-            </button>
-            <button
-              type="button"
-              aria-label="Click through"
-              onClick={pickingClickTool}
-              className={clickMode ? MODE_BUTTON_ACTIVE : MODE_BUTTON_IDLE}
-            >
-              <HugeiconsIcon icon={Cursor01Icon} size={14} />
-              Click
-            </button>
-          </div>
-          <Separator orientation="vertical" className="h-6 bg-white/15" />
-          <div className="flex items-center gap-0.5">
-            {DRAW_INK_TOOLS.map((tool) => (
-              <button
-                key={tool.id}
-                type="button"
-                aria-label={tool.label}
-                onClick={() => pickingInkTool(tool.id)}
-                className={
-                  !clickMode && drawTool === tool.id
-                    ? MODE_BUTTON_ACTIVE
-                    : MODE_BUTTON_IDLE
-                }
-              >
-                <HugeiconsIcon icon={tool.icon} size={14} />
-                {tool.label}
-              </button>
-            ))}
-          </div>
-          <Separator orientation="vertical" className="h-6 bg-white/15" />
-          <div className="flex items-center gap-1.5">
-            {DRAW_COLORS.map((swatch) => (
-              <button
-                key={swatch}
-                type="button"
-                aria-label={`Ink ${swatch}`}
-                onClick={() => setColor(swatch)}
-                className={
-                  color === swatch
-                    ? "size-6 rounded-full ring-2 ring-white ring-offset-2 ring-offset-neutral-800"
-                    : "size-6 rounded-full ring-1 ring-white/20 hover:ring-white/50"
-                }
-                style={{ backgroundColor: swatch }}
-              />
-            ))}
-          </div>
-          <Separator orientation="vertical" className="h-6 bg-white/15" />
-          <div className="flex items-center gap-1">
-            {DRAW_WIDTHS.map((width) => (
-              <button
-                key={width}
-                type="button"
-                aria-label={`Stroke ${width}`}
-                onClick={() => setStrokeWidth(width)}
-                className={
-                  strokeWidth === width
-                    ? "flex size-8 items-center justify-center rounded-lg bg-neutral-700 text-neutral-100"
-                    : "flex size-8 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-700/70 hover:text-neutral-100"
-                }
-              >
-                <span
-                  className="rounded-full bg-current"
-                  style={{ width: width + 2, height: width + 2 }}
-                />
-              </button>
-            ))}
-          </div>
-          <Separator orientation="vertical" className="h-6 bg-white/15" />
-          <Button variant="outline" size="sm" onClick={clearingDrawings}>
-            <HugeiconsIcon icon={Cancel01Icon} />
-            Clear
-          </Button>
-          <Button size="sm" onClick={exitingDrawMode}>
-            Exit
-          </Button>
-        </div>
+      {hintVisible ? (
+        <div className={HINT_SHELL}>{clickMode ? CLICK_HINT : DRAW_HINT}</div>
+      ) : null}
+      <div className={TOOLBAR_SHELL} onPointerDown={stoppingCanvasDraw}>
+        <button
+          type="button"
+          title="Draw"
+          aria-label="Draw"
+          onClick={pickingDrawTool}
+          className={clickMode ? TEXT_BUTTON_IDLE : TEXT_BUTTON_ACTIVE}
+        >
+          <HugeiconsIcon icon={CursorEdit01Icon} size={ICON_SIZE} />
+          Draw
+        </button>
+        <button
+          type="button"
+          title="Click through"
+          aria-label="Click through"
+          onClick={pickingClickTool}
+          className={clickMode ? TEXT_BUTTON_ACTIVE : TEXT_BUTTON_IDLE}
+        >
+          <HugeiconsIcon icon={Cursor01Icon} size={ICON_SIZE} />
+          Click
+        </button>
+
+        <Separator orientation="vertical" className={SEPARATOR} />
+
+        {DRAW_INK_TOOLS.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            title={tool.label}
+            aria-label={tool.label}
+            onClick={() => pickingInkTool(tool.id)}
+            className={
+              !clickMode && drawTool === tool.id
+                ? ICON_BUTTON_ACTIVE
+                : ICON_BUTTON_IDLE
+            }
+          >
+            <HugeiconsIcon icon={tool.icon} size={ICON_SIZE} />
+          </button>
+        ))}
+
+        <Separator orientation="vertical" className={SEPARATOR} />
+
+        {DRAW_COLORS.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            title={`Ink ${swatch}`}
+            aria-label={`Ink ${swatch}`}
+            onClick={() => setColor(swatch)}
+            className={
+              color === swatch
+                ? "size-5 rounded-full ring-2 ring-white ring-offset-2 ring-offset-neutral-900"
+                : "size-5 rounded-full ring-1 ring-white/25 hover:ring-white/60"
+            }
+            style={{ backgroundColor: swatch }}
+          />
+        ))}
+
+        <Separator orientation="vertical" className={SEPARATOR} />
+
+        {DRAW_WIDTHS.map((width) => (
+          <button
+            key={width}
+            type="button"
+            title={`Stroke ${width}`}
+            aria-label={`Stroke ${width}`}
+            onClick={() => setStrokeWidth(width)}
+            className={
+              strokeWidth === width ? ICON_BUTTON_ACTIVE : ICON_BUTTON_IDLE
+            }
+          >
+            <span
+              className="rounded-full bg-current"
+              style={{ width: width + 2, height: width + 2 }}
+            />
+          </button>
+        ))}
+
+        <Separator orientation="vertical" className={SEPARATOR} />
+
+        <button
+          type="button"
+          title="Clear drawings"
+          aria-label="Clear drawings"
+          onClick={clearingDrawings}
+          className={TEXT_BUTTON_IDLE}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={ICON_SIZE} />
+          Clear
+        </button>
+        <button
+          type="button"
+          title="Exit draw mode"
+          aria-label="Exit draw mode"
+          onClick={exitingDrawMode}
+          className="flex h-7 items-center rounded-lg bg-white px-2.5 text-xs font-semibold text-neutral-900 hover:bg-neutral-200"
+        >
+          Exit
+        </button>
       </div>
     </div>
   );
