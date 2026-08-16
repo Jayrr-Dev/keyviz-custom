@@ -11,7 +11,7 @@ import {
   Circle,
   Cursor01Icon,
   CursorEdit01Icon,
-  Square01Icon,
+  Pen01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -34,6 +34,8 @@ const TOOLBAR_HOST = "inline-flex w-max flex-col items-center gap-1.5";
 const HINT_SHELL =
   "whitespace-nowrap rounded-full bg-neutral-950 px-3 py-1 text-xs font-medium text-white shadow-lg";
 
+const HINT_STACK = "grid justify-items-center";
+
 const ICON_BUTTON_ACTIVE =
   "flex size-7 items-center justify-center rounded-lg bg-neutral-700 text-white";
 const ICON_BUTTON_IDLE =
@@ -47,17 +49,45 @@ const TEXT_BUTTON_IDLE =
 const SEPARATOR = "h-5 bg-white/15";
 
 const ICON_SIZE = 14;
+const SQUARE_GLYPH_VIEWBOX = 24;
+const SQUARE_GLYPH_INSET = 5;
+const SQUARE_GLYPH_STROKE = 1.5;
 
 const DRAW_INK_TOOLS: {
   id: DrawInkTool;
   label: string;
-  icon: typeof CursorEdit01Icon;
+  icon: typeof CursorEdit01Icon | null;
 }[] = [
-  { id: "pen", label: "Pen", icon: CursorEdit01Icon },
+  { id: "pen", label: "Pen", icon: Pen01Icon },
   { id: "arrow", label: "Arrow", icon: ArrowUpRight01Icon },
-  { id: "square", label: "Square", icon: Square01Icon },
+  { id: "square", label: "Square", icon: null },
   { id: "circle", label: "Circle", icon: Circle },
 ];
+
+/**
+ * Geometric square outline. Hugeicons Square01 is a rounded squircle.
+ */
+const RenderingSquareGlyph = ({ size }: { size: number }) => {
+  const side = SQUARE_GLYPH_VIEWBOX - SQUARE_GLYPH_INSET * 2;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${SQUARE_GLYPH_VIEWBOX} ${SQUARE_GLYPH_VIEWBOX}`}
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x={SQUARE_GLYPH_INSET}
+        y={SQUARE_GLYPH_INSET}
+        width={side}
+        height={side}
+        stroke="currentColor"
+        strokeWidth={SQUARE_GLYPH_STROKE}
+      />
+    </svg>
+  );
+};
 
 /**
  * Stops a toolbar click from starting a stroke on the canvas.
@@ -99,6 +129,7 @@ export const RenderingDrawToolbar = () => {
   };
 
   const exitingDrawMode = () => {
+    void invoke("log", { message: "exit-source: toolbar-button" });
     setEnabled(false);
     invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
   };
@@ -121,7 +152,18 @@ export const RenderingDrawToolbar = () => {
   return (
     <div className={TOOLBAR_HOST}>
       {hintVisible ? (
-        <div className={HINT_SHELL}>{clickMode ? CLICK_HINT : DRAW_HINT}</div>
+        <div className={HINT_STACK}>
+          <div
+            className={`${HINT_SHELL} col-start-1 row-start-1 ${clickMode ? "invisible" : ""}`}
+          >
+            {DRAW_HINT}
+          </div>
+          <div
+            className={`${HINT_SHELL} col-start-1 row-start-1 ${clickMode ? "" : "invisible"}`}
+          >
+            {CLICK_HINT}
+          </div>
+        </div>
       ) : null}
       <div className={TOOLBAR_SHELL} onPointerDown={stoppingCanvasDraw}>
         <button
@@ -160,7 +202,11 @@ export const RenderingDrawToolbar = () => {
                 : ICON_BUTTON_IDLE
             }
           >
-            <HugeiconsIcon icon={tool.icon} size={ICON_SIZE} />
+            {tool.icon ? (
+              <HugeiconsIcon icon={tool.icon} size={ICON_SIZE} />
+            ) : (
+              <RenderingSquareGlyph size={ICON_SIZE} />
+            )}
           </button>
         ))}
 

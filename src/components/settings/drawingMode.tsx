@@ -76,6 +76,7 @@ export const DrawingMode = () => {
   }, [setEnabled]);
 
   const togglingDrawMode = (next: boolean) => {
+    void invoke("log", { message: `exit-source: settings-switch ${next}` });
     setEnabled(next);
     invoke("set_draw_mode", { enabled: next }).catch(() => undefined);
   };

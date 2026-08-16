@@ -32,13 +32,18 @@ const RING_SIZE_RATIO = 0.5;
 /** Grab ring stroke relative to ring diameter. */
 const RING_BORDER_RATIO = 0.14;
 
+const GRAB_SHAPE_BY_BUTTON: Record<string, GrabShape> = {
+  Left: "circle",
+  Right: "circle",
+  Middle: "triangle",
+};
+
 /**
  * Hold shape for each mouse button.
  */
 const pickingGrabShape = (button: string | null): GrabShape => {
-  if (button === "Right") return "square";
-  if (button === "Middle") return "triangle";
-  return "circle";
+  if (!button) return "circle";
+  return GRAB_SHAPE_BY_BUTTON[button] ?? "circle";
 };
 
 const isMacos = platform() === "macos";
@@ -61,7 +66,6 @@ export const MouseOverlay = () => {
   const [burstVariant, setBurstVariant] = useState<
     "straight" | "wavy" | "jagged"
   >("straight");
-  const [grabShape, setGrabShape] = useState<GrabShape>("circle");
   const [comboScale, setComboScale] = useState(1);
   const [comboCount, setComboCount] = useState(1);
   const [highlightColor, setHighlightColor] = useState(style.color);
@@ -107,7 +111,6 @@ export const MouseOverlay = () => {
             ? "jagged"
             : "straight",
       );
-      setGrabShape(pickingGrabShape(pressedMouseButton));
       setHighlightColor(
         pressedMouseButton === "Right"
           ? pickingLeftComplementColor(style.color)
@@ -207,6 +210,7 @@ export const MouseOverlay = () => {
 
   const ringSize = style.size * RING_SIZE_RATIO;
   const ringVisible = showRing || style.keepHighlight;
+  const grabShape = pickingGrabShape(pressedMouseButton);
   const indicatorVisible =
     showBurst || showRing || style.keepIndicator || wheel !== 0;
 
@@ -237,6 +241,7 @@ export const MouseOverlay = () => {
               comboCount={comboCount}
             />
             <RenderingGrabShape
+              key={grabShape}
               shape={grabShape}
               size={ringSize}
               color={highlightColor}

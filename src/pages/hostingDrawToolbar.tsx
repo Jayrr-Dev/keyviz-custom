@@ -1,9 +1,18 @@
 import { RenderingDrawToolbar } from "@/components/renderingDrawToolbar";
-import { sizingDrawToolbarWindow } from "@/lib/sizingDrawToolbarWindow";
+import {
+  markingDrawToolbarLive,
+  sizingDrawToolbarWindow,
+} from "@/lib/sizingDrawToolbarWindow";
 import { DRAW_MODE_STORE, useDrawMode } from "@/stores/draw_mode";
 import { listenForUpdates } from "@/stores/sync";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
+
+interface DrawState {
+  drawMode: boolean;
+  clickMode: boolean;
+}
 
 const HOST_SHELL =
   "dark inline-flex w-max flex-col items-center bg-transparent p-1";
@@ -26,11 +35,29 @@ const strippingWindowChrome = () => {
  */
 const HostingDrawToolbar = () => {
   const hostRef = useRef<HTMLDivElement>(null);
+  const gotToggleRef = useRef(false);
+  const enabled = useDrawMode((state) => state.enabled);
 
   useEffect(() => {
     strippingWindowChrome();
+    const readingStartupState = async () => {
+      try {
+        const state = await invoke<DrawState>("reading_draw_state");
+        if (gotToggleRef.current) return;
+        markingDrawToolbarLive(state.drawMode);
+        useDrawMode.setState({
+          enabled: state.drawMode,
+          clickMode: state.clickMode,
+        });
+      } catch {
+        return;
+      }
+    };
+    void readingStartupState();
     const unlisten = Promise.all([
       listen<boolean>("draw-mode-toggle", (event) => {
+        gotToggleRef.current = true;
+        markingDrawToolbarLive(event.payload);
         useDrawMode.setState({ enabled: event.payload, clickMode: false });
       }),
       listen<boolean>("draw-click-mode", (event) => {
@@ -39,21 +66,24 @@ const HostingDrawToolbar = () => {
       listenForUpdates(DRAW_MODE_STORE, useDrawMode.setState),
     ]);
     return () => {
+      markingDrawToolbarLive(false);
       unlisten.then((stops) => stops.forEach((stop) => stop()));
     };
   }, []);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
+    if (!host || !enabled) {
+      markingDrawToolbarLive(false);
+      return;
+    }
+    markingDrawToolbarLive(true);
     let frame: number | null = null;
 
     const resizingToContent = () => {
       if (frame != null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        // scrollWidth on a no-wrap row does not depend on the window size,
-        // so measuring here cannot bounce against setSize.
         void sizingDrawToolbarWindow(host.scrollWidth, host.scrollHeight);
       });
     };
@@ -65,7 +95,7 @@ const HostingDrawToolbar = () => {
       observer.disconnect();
       if (frame != null) cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [enabled]);
 
   return (
     <div ref={hostRef} className={HOST_SHELL}>

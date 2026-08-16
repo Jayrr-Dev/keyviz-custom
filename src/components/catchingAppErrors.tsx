@@ -24,6 +24,7 @@ export class CatchingAppErrors extends Component<
   }
 
   componentDidCatch(error: Error) {
+    void invoke("log", { message: `exit-source: error-boundary ${error.message}` });
     void showingWindowsError(error);
     invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
   }

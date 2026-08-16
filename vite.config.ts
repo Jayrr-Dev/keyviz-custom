@@ -32,6 +32,14 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  optimizeDeps: {
+    include: [
+      "@tauri-apps/api/dpi",
+      "@tauri-apps/api/window",
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/event",
+    ],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

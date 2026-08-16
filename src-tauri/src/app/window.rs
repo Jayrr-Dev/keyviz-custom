@@ -1,6 +1,10 @@
+use std::sync::Mutex;
+
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WebviewWindowBuilder,
 };
+
+use crate::app::state::AppState;
 
 const DRAW_TOOLBAR_LABEL: &str = "draw-toolbar";
 const DRAW_TOOLBAR_WIDTH: f64 = 700.0;
@@ -37,45 +41,40 @@ pub fn toggling_settings_window(app: &AppHandle) {
 }
 
 /**
- * Turns draw mode on or off and lets the overlay take mouse clicks while drawing.
- * The overlay is not focusable in normal use, so we enable focus here so Escape can exit.
+ * Makes the overlay and toolbar match the current draw_mode / click_mode flags.
+ * Window work runs on the UI thread and re-reads rust state so a stale toggle
+ * cannot turn drawing back on after exit.
  */
-pub fn applying_draw_mode(app: &AppHandle, enabled: bool) {
-    if let Some(window) = app.get_webview_window("main") {
-        if enabled {
-            let _ = window.set_focusable(true);
-            let _ = window.set_ignore_cursor_events(false);
-            let _ = window.set_focus();
-        } else {
-            let _ = window.set_ignore_cursor_events(true);
-            let _ = window.set_focusable(false);
+pub fn syncing_draw_windows(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = handle.clone().run_on_main_thread(move || {
+        let (draw_mode, click_mode) = {
+            let state = handle.state::<Mutex<AppState>>();
+            let app_state = state.lock().unwrap();
+            (app_state.draw_mode, app_state.draw_click_mode)
+        };
+        if let Some(window) = handle.get_webview_window("main") {
+            if draw_mode && !click_mode {
+                let _ = window.set_focusable(true);
+                let _ = window.set_ignore_cursor_events(false);
+                let _ = window.set_focus();
+            } else {
+                let _ = window.set_ignore_cursor_events(true);
+                let _ = window.set_focusable(false);
+            }
         }
-    }
-    let _ = app.emit("draw-mode-toggle", enabled);
-    let _ = app.emit("draw-click-mode", false);
-    if enabled {
-        showing_draw_toolbar(app);
-    } else {
-        hiding_draw_toolbar(app);
-    }
-}
-
-/**
- * Click mode: drawings stay, mouse clicks go through to other apps.
- */
-pub fn applying_draw_click_mode(app: &AppHandle, click_mode: bool) {
-    if let Some(window) = app.get_webview_window("main") {
-        if click_mode {
-            let _ = window.set_ignore_cursor_events(true);
-            let _ = window.set_focusable(false);
+        println!(
+            "[draw] sync draw_mode={} click_mode={}",
+            draw_mode, click_mode
+        );
+        let _ = handle.emit("draw-mode-toggle", draw_mode);
+        let _ = handle.emit("draw-click-mode", click_mode);
+        if draw_mode {
+            showing_draw_toolbar(&handle);
         } else {
-            let _ = window.set_focusable(true);
-            let _ = window.set_ignore_cursor_events(false);
-            let _ = window.set_focus();
+            hiding_draw_toolbar(&handle);
         }
-    }
-    let _ = app.emit("draw-click-mode", click_mode);
-    showing_draw_toolbar(app);
+    });
 }
 
 /**
@@ -115,6 +114,15 @@ fn placing_draw_toolbar(window: &WebviewWindow) {
     let x = pos.x + (size.width as i32 - current.width as i32) / 2;
     let y = pos.y + size.height as i32 - current.height as i32 - gap;
     let _ = window.set_position(PhysicalPosition { x, y });
+    raising_toolbar_z_order(window);
+}
+
+/**
+ * Keeps the toolbar above the overlay without moving it.
+ */
+fn raising_toolbar_z_order(window: &WebviewWindow) {
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_ignore_cursor_events(false);
 
     #[cfg(target_os = "windows")]
     {
@@ -155,17 +163,12 @@ pub fn raising_draw_toolbar(app: &AppHandle) {
 }
 
 /**
- * Opens the clickable draw toolbar above the overlay.
+ * Builds the toolbar webview once at startup so the first toggle is instant.
  */
-fn showing_draw_toolbar(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(DRAW_TOOLBAR_LABEL) {
-        placing_draw_toolbar(&window);
-        let _ = window.set_ignore_cursor_events(false);
-        let _ = window.set_always_on_top(true);
-        let _ = window.show();
+pub fn building_draw_toolbar(app: &AppHandle) {
+    if app.get_webview_window(DRAW_TOOLBAR_LABEL).is_some() {
         return;
     }
-
     let webview_url = tauri::WebviewUrl::App("index.html#/draw-toolbar".into());
     if let Ok(window) = WebviewWindowBuilder::new(app, DRAW_TOOLBAR_LABEL, webview_url)
         .title("Keyviz Draw")
@@ -179,10 +182,24 @@ fn showing_draw_toolbar(app: &AppHandle) {
         .visible(false)
         .build()
     {
-        placing_draw_toolbar(&window);
         let _ = window.set_ignore_cursor_events(false);
-        let _ = window.show();
     }
+}
+
+/**
+ * Shows the prebuilt toolbar above the overlay.
+ */
+fn showing_draw_toolbar(app: &AppHandle) {
+    building_draw_toolbar(app);
+    let Some(window) = app.get_webview_window(DRAW_TOOLBAR_LABEL) else {
+        return;
+    };
+    if window.is_visible().unwrap_or(false) {
+        raising_toolbar_z_order(&window);
+        return;
+    }
+    placing_draw_toolbar(&window);
+    let _ = window.show();
 }
 
 /**

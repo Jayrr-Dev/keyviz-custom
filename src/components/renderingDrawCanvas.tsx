@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { PointerEvent, useEffect, useRef } from "react";
 
 const EXIT_KEY = "Escape";
+
 const ERASE_BUTTON = 2;
 const ERASE_RADIUS_PADDING = 10;
 const ERASE_STREAK_WIDTH_SCALE = 0.55;
@@ -354,7 +355,6 @@ export const RenderingDrawCanvas = () => {
     useDrawMode((state) => state.strokeLifetimeSec) ?? 0;
   const clickMode = useDrawMode((state) => state.clickMode);
   const drawTool = useDrawMode((state) => state.drawTool);
-  const setEnabled = useDrawMode((state) => state.setEnabled);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<DrawStroke[]>([]);
   const currentRef = useRef<DrawStroke | null>(null);
@@ -469,12 +469,12 @@ export const RenderingDrawCanvas = () => {
     const exitingOnEscape = (event: KeyboardEvent) => {
       if (event.key !== EXIT_KEY) return;
       event.preventDefault();
-      setEnabled(false);
+      void invoke("log", { message: "exit-source: escape" });
       invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
     };
     window.addEventListener("keydown", exitingOnEscape);
     return () => window.removeEventListener("keydown", exitingOnEscape);
-  }, [enabled, setEnabled]);
+  }, [enabled]);
 
   /**
    * Removes strokes under the eraser.

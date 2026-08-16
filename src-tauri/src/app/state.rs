@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use serde::Deserialize;
 use tauri::{image::Image, include_image, Emitter, Wry};
 use tauri_plugin_store::StoreExt;
@@ -11,6 +13,8 @@ pub struct AppState {
     pub draw_click_mode: bool,
     pub draw_shortcut_latched: bool,
     pub settings_shortcut_latched: bool,
+    /// Guards against a repeated hook event toggling draw mode twice.
+    pub draw_toggled_at: Option<Instant>,
 
     pub monitor_name: Option<String>,
     pub monitor_scale: f64,
@@ -45,6 +49,7 @@ impl AppState {
             draw_click_mode: false,
             draw_shortcut_latched: false,
             settings_shortcut_latched: false,
+            draw_toggled_at: None,
             monitor_name: None,
             monitor_scale: 1.0,
             monitor_position: (0, 0),

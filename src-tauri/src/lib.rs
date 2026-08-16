@@ -10,13 +10,15 @@ use tauri::{
 
 mod app;
 use app::commands::{
-    log, reading_foreground_app, set_draw_click_mode, set_draw_mode, set_main_window_monitor,
-    set_toggle_shortcut,
+    log, reading_draw_state, reading_foreground_app, set_draw_click_mode, set_draw_mode,
+    set_main_window_monitor, set_toggle_shortcut,
     spanning_all_monitors,
 };
 use app::event::start_listener;
 use app::state::AppState;
-use app::window::{applying_draw_mode, config_window, toggling_settings_window};
+use app::window::{
+    building_draw_toolbar, config_window, syncing_draw_windows, toggling_settings_window,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +40,8 @@ pub fn run() {
                 let mut app_state = state.lock().unwrap();
                 spanning_all_monitors(&window, None, &mut app_state);
             }
+
+            building_draw_toolbar(&app_handle);
 
             // tray actions
             let toggle_item = MenuItem::with_id(app, "toggle", "Stop", true, None::<&str>)?;
@@ -68,11 +72,13 @@ pub fn run() {
                         toggling_settings_window(app);
                     }
                     "exit-draw" => {
-                        let state = app.state::<Mutex<AppState>>();
-                        let mut app_state = state.lock().unwrap();
-                        app_state.draw_mode = false;
-                        app_state.draw_click_mode = false;
-                        applying_draw_mode(app, false);
+                        {
+                            let state = app.state::<Mutex<AppState>>();
+                            let mut app_state = state.lock().unwrap();
+                            app_state.draw_mode = false;
+                            app_state.draw_click_mode = false;
+                        }
+                        syncing_draw_windows(app);
                     }
                     "quit" => std::process::exit(0),
                     _ => println!("um... what?"),
@@ -101,6 +107,7 @@ pub fn run() {
             set_draw_mode,
             set_draw_click_mode,
             set_main_window_monitor,
+            reading_draw_state,
             reading_foreground_app
         ])
         .run(tauri::generate_context!())

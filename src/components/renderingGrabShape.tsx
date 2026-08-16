@@ -43,6 +43,7 @@ export const RenderingGrabShape = ({
   const inset = stroke / 2 + 0.5;
   const inner = size - inset * 2;
   const trianglePoints = buildingTrianglePoints(size, inset);
+  const resolvedShape = shape === "square" ? "circle" : shape;
 
   return (
     <motion.svg
@@ -58,7 +59,7 @@ export const RenderingGrabShape = ({
       }}
       transition={{ duration, ease: easeInOutExpo }}
     >
-      {shape === "circle" && (
+      {resolvedShape === "circle" && (
         <>
           <circle
             cx={size / 2}
@@ -78,7 +79,7 @@ export const RenderingGrabShape = ({
           />
         </>
       )}
-      {shape === "square" && (
+      {resolvedShape === "square" && (
         <>
           <rect
             x={inset}
@@ -100,7 +101,7 @@ export const RenderingGrabShape = ({
           />
         </>
       )}
-      {shape === "triangle" && (
+      {resolvedShape === "triangle" && (
         <>
           <polygon
             points={trianglePoints}

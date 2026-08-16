@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{Manager, WebviewWindow};
+
+#[cfg(not(target_os = "windows"))]
+use tauri::{PhysicalPosition, PhysicalSize};
 
 use crate::app::state::AppState;
 
@@ -27,26 +30,50 @@ pub fn set_toggle_shortcut(app: tauri::AppHandle, shortcut: Vec<String>) {
     app_state.toggle_shortcut = shortcut;
 }
 
+/// Current draw flags, so a window that just loaded does not have to guess.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawState {
+    pub draw_mode: bool,
+    pub click_mode: bool,
+}
+
+#[tauri::command]
+pub fn reading_draw_state(app: tauri::AppHandle) -> DrawState {
+    let state = app.state::<Mutex<AppState>>();
+    let app_state = state.lock().unwrap();
+    DrawState {
+        draw_mode: app_state.draw_mode,
+        click_mode: app_state.draw_click_mode,
+    }
+}
+
 /// Turns draw mode on or off from Settings.
 #[tauri::command]
 pub fn set_draw_mode(app: tauri::AppHandle, enabled: bool) {
-    let state = app.state::<Mutex<AppState>>();
-    let mut app_state = state.lock().unwrap();
-    app_state.draw_mode = enabled;
-    app_state.draw_click_mode = false;
-    crate::app::window::applying_draw_mode(&app, enabled);
+    println!("[draw] set_draw_mode({})", enabled);
+    {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        app_state.draw_mode = enabled;
+        app_state.draw_click_mode = false;
+    }
+    crate::app::window::syncing_draw_windows(&app);
 }
 
 /// Click mode keeps drawings and lets the mouse through to other apps.
 #[tauri::command]
 pub fn set_draw_click_mode(app: tauri::AppHandle, enabled: bool) {
-    let state = app.state::<Mutex<AppState>>();
-    let mut app_state = state.lock().unwrap();
-    if !app_state.draw_mode {
-        return;
+    println!("[draw] set_draw_click_mode({})", enabled);
+    {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        if !app_state.draw_mode {
+            return;
+        }
+        app_state.draw_click_mode = enabled;
     }
-    app_state.draw_click_mode = enabled;
-    crate::app::window::applying_draw_click_mode(&app, enabled);
+    crate::app::window::syncing_draw_windows(&app);
 }
 
 /// Spans the overlay across every display. `monitor_name` only places the keycaps.
