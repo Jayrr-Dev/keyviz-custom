@@ -1,5 +1,10 @@
 import { ColorInput } from "@/components/ui/color-picker";
 import {
+  MouseLeftClickIcon,
+  MouseMiddleClickIcon,
+  MouseRightClickIcon,
+} from "@/components/ui/icons";
+import {
   Item,
   ItemActions,
   ItemContent,
@@ -10,7 +15,7 @@ import {
 import { NumberInput } from "@/components/ui/number-input";
 import { Switch } from "@/components/ui/switch";
 import { useKeyEvent } from "@/stores/key_event";
-import { useKeyStyle } from "@/stores/key_style";
+import { HoldShapeStyle, useKeyStyle } from "@/stores/key_style";
 import {
   ArrowExpand02Icon,
   Cursor01Icon,
@@ -25,7 +30,7 @@ import {
   Unlink02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useState } from "react";
+import { ComponentType, useState } from "react";
 import { NumberScrubber } from "../ui/number-input-scrub";
 import {
   Select,
@@ -36,6 +41,31 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Toggle } from "../ui/toggle";
+
+/** Fallback when an older save has no hold-shape field. */
+const DEFAULT_HOLD_SHAPE: HoldShapeStyle = "triangle";
+
+/** Circle, directional triangle, or prerotated square. */
+const HOLD_SHAPE_OPTIONS: { value: HoldShapeStyle; label: string }[] = [
+  { value: "circle", label: "Circle" },
+  { value: "triangle", label: "Triangle" },
+  { value: "square", label: "Square" },
+];
+
+/** One row per mouse button in Hold Shape settings. */
+const HOLD_SHAPE_FIELDS: {
+  key: "holdShapeLeft" | "holdShapeMiddle" | "holdShapeRight";
+  title: string;
+  Icon: ComponentType<{ size?: number | string }>;
+}[] = [
+  { key: "holdShapeLeft", title: "Left Hold", Icon: MouseLeftClickIcon },
+  {
+    key: "holdShapeMiddle",
+    title: "Middle Hold",
+    Icon: MouseMiddleClickIcon,
+  },
+  { key: "holdShapeRight", title: "Right Hold", Icon: MouseRightClickIcon },
+];
 
 export const MouseSettings = () => {
   const mouse = useKeyStyle((state) => state.mouse);
@@ -125,6 +155,42 @@ export const MouseSettings = () => {
           />
         </ItemActions>
       </Item>
+
+      <h2 className="text-sm text-muted-foreground font-medium mt-2">
+        Hold Shape
+      </h2>
+      {HOLD_SHAPE_FIELDS.map(({ key, title, Icon }) => (
+        <Item key={key} variant="muted">
+          <ItemContent>
+            <ItemTitle>
+              <Icon size="1em" /> {title}
+            </ItemTitle>
+            <ItemDescription>Ring while you hold this button</ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            <Select
+              value={mouse[key] ?? DEFAULT_HOLD_SHAPE}
+              onValueChange={(holdShape: HoldShapeStyle) =>
+                setMouseStyle({ [key]: holdShape })
+              }
+              disabled={!mouse.showClicks}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Shape" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {HOLD_SHAPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </ItemActions>
+        </Item>
+      ))}
 
       <h2 className="text-sm text-muted-foreground font-medium mt-2">
         Button Indicator

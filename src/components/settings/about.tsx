@@ -7,7 +7,14 @@ import { motion } from "motion/react"
 import { useState } from "react"
 import { toast } from "sonner"
 
-export const VERSION = "2.1.1"
+export const VERSION = "2.2.0"
+
+/** Display name for this education and streaming build. */
+export const APP_NAME = "Keyviz Stream"
+
+const RELEASES_PAGE_URL = "https://github.com/Jayrr-Dev/keyviz-custom/releases"
+const LATEST_RELEASE_API_URL =
+    "https://api.github.com/repos/Jayrr-Dev/keyviz-custom/releases/latest"
 
 export const AboutPage = () => {
     const [checking, setChecking] = useState(false);
@@ -15,15 +22,15 @@ export const AboutPage = () => {
     const [hovered, setHovered] = useState(false);
 
     const visitReleasePage = () => {
-        openUrl('https://github.com/mulaRahul/keyviz/releases');
+        openUrl(RELEASES_PAGE_URL);
     }
 
     const checkForUpdates = async () => {
         setChecking(true);
         try {
-            const response = await fetch('https://api.github.com/repos/mulaRahul/keyviz/releases/latest')
+            const response = await fetch(LATEST_RELEASE_API_URL)
             const data = await response.json()
-            const latestVersion = data.tag_name.substring(1, 6);
+            const latestVersion = String(data.tag_name ?? "").replace(/^v/, "");
             if (latestVersion !== VERSION) {
                 setUpdateAvailable(true);
                 toast.success(
@@ -73,12 +80,13 @@ export const AboutPage = () => {
                     alt="logo-pro"
                 />
             </div>
-            <h1 className="mt-4 mb-2 text-xl font-semibold">{
-                hovered ? "Keyviz Pro" : "Keyviz"
-            }</h1>
+            <h1 className="mt-4 mb-2 text-xl font-semibold">{APP_NAME}</h1>
             <p className="text-center text-sm text-muted-foreground">
-                v{VERSION}-beta <br />
-                © 2026 Rahul Mula
+                v{VERSION} <br />
+                For classrooms and live streams
+            </p>
+            <p className="mt-1 text-center text-xs text-muted-foreground">
+                Based on Keyviz by Rahul Mula
             </p>
         </div>
 
@@ -108,7 +116,7 @@ export const AboutPage = () => {
                             <HugeiconsIcon icon={SparklesIcon} size="1em" /> Upgrade to Pro
                         </ItemTitle>
                         <ItemDescription>
-                            Love Keyviz? Support its growth and unlock more with Pro.
+                            Support the original Keyviz project and unlock Pro extras.
                         </ItemDescription>
                     </ItemContent>
                     <ItemActions>

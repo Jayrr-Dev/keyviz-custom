@@ -1,7 +1,7 @@
 [package]
 name = "keyviz"
-version = "0.1.0"
-description = "A Tauri App"
+version = "2.2.0"
+description = "Keyviz Stream, a key overlay for classrooms and live streams"
 authors = ["you"]
 edition = "2021"
 

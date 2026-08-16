@@ -22,7 +22,7 @@ export const listeningRuntimeErrors = () => {
   const observer = new MutationObserver(() => {
     const overlay = document.querySelector("vite-error-overlay");
     if (!overlay) return;
-    const text = overlay.textContent?.trim() || "Keyviz hit an error";
+    const text = overlay.textContent?.trim() || "Keyviz Stream hit an error";
     hidingViteErrorOverlay();
     void showingWindowsError(text);
   });

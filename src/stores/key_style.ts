@@ -81,11 +81,20 @@ export interface BackgroundSettings {
   color: string;
 }
 
+/** Hold-ring family. Facing is resolved per mouse button. */
+export type HoldShapeStyle = "circle" | "triangle" | "square";
+
 export interface MouseSettings {
   showClicks: boolean;
   size: number;
   color: string;
   keepHighlight: boolean;
+  /** Hold ring for the left mouse button. */
+  holdShapeLeft: HoldShapeStyle;
+  /** Hold ring for the middle mouse button. */
+  holdShapeMiddle: HoldShapeStyle;
+  /** Hold ring for the right mouse button. */
+  holdShapeRight: HoldShapeStyle;
   showIndicator: boolean;
   keepIndicator: boolean;
   indicatorStyle: "keyboard" | "mouse";
@@ -176,6 +185,9 @@ const createKeyStyleStore = createSyncedStore<KeyStyleStore>(
       size: 150,
       color: "#009dff",
       keepHighlight: false,
+      holdShapeLeft: "triangle",
+      holdShapeMiddle: "triangle",
+      holdShapeRight: "triangle",
       showIndicator: true,
       keepIndicator: true,
       indicatorStyle: "keyboard",

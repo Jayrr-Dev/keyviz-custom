@@ -9,7 +9,7 @@ import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatingClickBurst } from "./animatingClickBurst";
 import { MouseIndicator } from "./mouse-indicator";
-import { GrabShape, RenderingGrabShape } from "./renderingGrabShape";
+import { RenderingGrabShape, resolvingGrabShape } from "./renderingGrabShape";
 import { RenderingScrollArrow } from "./renderingScrollArrow";
 
 /** Hold longer than this and the click becomes a grab (ring). */
@@ -42,21 +42,43 @@ const SCROLL_ARROW_OFFSET_Y = 2;
 /** Matches the system cursor, not the click highlight. */
 const SCROLL_ARROW_SIZE = 16;
 
-const GRAB_SHAPE_BY_BUTTON: Record<string, GrabShape> = {
-  Left: "triangle-right",
-  Right: "triangle-left",
-  Middle: "triangle-up",
+/** Idle / always-highlight ring uses the middle button until a real hold. */
+const DEFAULT_HOLD_BUTTON = "Middle";
+
+/** Flash the new hold shape on the cursor after a settings change. */
+const HOLD_SHAPE_PREVIEW_MS = 800;
+
+const isMacos = platform() === "macos";
+
+/**
+ * Ring color for a mouse button. Right and middle use the complements.
+ */
+const resolvingHoldHighlightColor = (button: string, color: string) => {
+  if (button === "Right") return pickingLeftComplementColor(color);
+  if (button === "Middle") return pickingRightComplementColor(color);
+  return color;
 };
 
 /**
- * Hold shape for each mouse button.
+ * Which hold-shape row changed, so the overlay can preview that button.
  */
-const pickingGrabShape = (button: string | null): GrabShape => {
-  if (!button) return "triangle-up";
-  return GRAB_SHAPE_BY_BUTTON[button] ?? "triangle-up";
+const pickingChangedHoldButton = (
+  previous: {
+    holdShapeLeft?: string;
+    holdShapeMiddle?: string;
+    holdShapeRight?: string;
+  },
+  next: {
+    holdShapeLeft?: string;
+    holdShapeMiddle?: string;
+    holdShapeRight?: string;
+  },
+): string | null => {
+  if (previous.holdShapeLeft !== next.holdShapeLeft) return "Left";
+  if (previous.holdShapeMiddle !== next.holdShapeMiddle) return "Middle";
+  if (previous.holdShapeRight !== next.holdShapeRight) return "Right";
+  return null;
 };
-
-const isMacos = platform() === "macos";
 
 /**
  * Click highlight overlay: burst on short clicks, ring while grabbing.
@@ -79,14 +101,23 @@ export const MouseOverlay = () => {
   const [comboScale, setComboScale] = useState(1);
   const [comboCount, setComboCount] = useState(1);
   const [highlightColor, setHighlightColor] = useState(style.color);
+  const [lastHoldButton, setLastHoldButton] = useState(DEFAULT_HOLD_BUTTON);
+  const [previewRing, setPreviewRing] = useState(false);
 
   const positionRef = useRef<HTMLDivElement>(null);
   const burstTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isGrabRef = useRef(false);
   const hasPressCycleRef = useRef(false);
   const comboCountRef = useRef(0);
   const lastBurstAtRef = useRef(0);
+  const skipHoldShapePreviewRef = useRef(true);
+  const previousHoldShapesRef = useRef({
+    holdShapeLeft: style.holdShapeLeft,
+    holdShapeMiddle: style.holdShapeMiddle,
+    holdShapeRight: style.holdShapeRight,
+  });
 
   const clearingTimers = () => {
     if (burstTimeoutRef.current) {
@@ -96,6 +127,10 @@ export const MouseOverlay = () => {
     if (holdTimeoutRef.current) {
       clearTimeout(holdTimeoutRef.current);
       holdTimeoutRef.current = null;
+    }
+    if (previewTimeoutRef.current) {
+      clearTimeout(previewTimeoutRef.current);
+      previewTimeoutRef.current = null;
     }
   };
 
@@ -113,6 +148,8 @@ export const MouseOverlay = () => {
     if (pressedMouseButton) {
       hasPressCycleRef.current = true;
       clearingTimers();
+      setPreviewRing(false);
+      setLastHoldButton(pressedMouseButton);
       isGrabRef.current = false;
       setBurstVariant(
         pressedMouseButton === "Right"
@@ -179,6 +216,43 @@ export const MouseOverlay = () => {
   }, [dragging, pressedMouseButton]);
 
   useEffect(() => {
+    const previous = previousHoldShapesRef.current;
+    const next = {
+      holdShapeLeft: style.holdShapeLeft,
+      holdShapeMiddle: style.holdShapeMiddle,
+      holdShapeRight: style.holdShapeRight,
+    };
+    previousHoldShapesRef.current = next;
+
+    if (skipHoldShapePreviewRef.current) {
+      skipHoldShapePreviewRef.current = false;
+      return;
+    }
+
+    const changedCount = [
+      previous.holdShapeLeft !== next.holdShapeLeft,
+      previous.holdShapeMiddle !== next.holdShapeMiddle,
+      previous.holdShapeRight !== next.holdShapeRight,
+    ].filter(Boolean).length;
+    if (changedCount !== 1) return;
+
+    const changedButton = pickingChangedHoldButton(previous, next);
+    if (!changedButton) return;
+
+    setLastHoldButton(changedButton);
+    if (pressedMouseButton || !style.showClicks) return;
+
+    setPreviewRing(true);
+    if (previewTimeoutRef.current) {
+      clearTimeout(previewTimeoutRef.current);
+    }
+    previewTimeoutRef.current = setTimeout(() => {
+      setPreviewRing(false);
+      previewTimeoutRef.current = null;
+    }, HOLD_SHAPE_PREVIEW_MS);
+  }, [style.holdShapeLeft, style.holdShapeMiddle, style.holdShapeRight]);
+
+  useEffect(() => {
     return () => clearingTimers();
   }, []);
 
@@ -220,9 +294,12 @@ export const MouseOverlay = () => {
     wheel !== 0;
   if (!shouldRender) return null;
 
+  const activeHoldButton = pressedMouseButton ?? lastHoldButton;
+  const grabShape =
+    resolvingGrabShape(activeHoldButton, style) ?? "triangle-up";
+  const ringColor = resolvingHoldHighlightColor(activeHoldButton, style.color);
   const ringSize = style.size * RING_SIZE_RATIO;
-  const ringVisible = showRing || style.keepHighlight;
-  const grabShape = pickingGrabShape(pressedMouseButton);
+  const ringVisible = showRing || previewRing || style.keepHighlight;
   const indicatorVisible =
     showBurst || showRing || style.keepIndicator || wheel !== 0;
   const scrolling = wheel !== 0;
@@ -254,13 +331,12 @@ export const MouseOverlay = () => {
               comboCount={comboCount}
             />
             <RenderingGrabShape
-              key={grabShape}
               shape={grabShape}
               size={ringSize}
-              color={highlightColor}
+              color={ringColor}
               stroke={ringSize * RING_BORDER_RATIO}
               visible={ringVisible}
-              pressed={showRing}
+              pressed={showRing || previewRing}
               duration={animationDuration}
             />
           </div>

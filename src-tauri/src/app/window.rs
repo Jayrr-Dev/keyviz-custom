@@ -23,7 +23,7 @@ pub fn toggling_settings_window(app: &AppHandle) {
 
     let webview_url = tauri::WebviewUrl::App("index.html#/settings".into());
     let _ = WebviewWindowBuilder::new(app, "settings", webview_url)
-        .title("Keyviz")
+        .title("Keyviz Stream")
         .inner_size(800.0, 640.0)
         .min_inner_size(640.0, 480.0)
         .max_inner_size(1000.0, 800.0)
@@ -168,7 +168,7 @@ fn reading_dev_project_root(exe: &std::path::Path) -> Option<std::path::PathBuf>
 }
 
 /**
- * Starts a new Keyviz process after this one exits.
+ * Starts a new Keyviz Stream process after this one exits.
  * Dev builds need `npx tauri dev` so Vite comes back on localhost:1420.
  * Packaged builds only relaunch the exe.
  */
@@ -195,7 +195,7 @@ pub fn restarting_app() {
                 let root = root.to_string_lossy().replace('"', "");
                 // Wait for this process to die, then relaunch the full Vite + Tauri stack.
                 let command = format!(
-                    "/C ping 127.0.0.1 -n 3 >nul & cd /d \"{root}\" & start \"Keyviz\" cmd /k \"npx tauri dev\""
+                    "/C ping 127.0.0.1 -n 3 >nul & cd /d \"{root}\" & start \"Keyviz Stream\" cmd /k \"npx tauri dev\""
                 );
                 let _ = std::process::Command::new("cmd")
                     .raw_arg(command)

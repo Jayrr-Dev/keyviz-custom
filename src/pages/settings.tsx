@@ -9,7 +9,7 @@ import {
   LabelingHotkeys,
   MouseSettings,
 } from "@/components/settings";
-import { VERSION } from "@/components/settings/about";
+import { APP_NAME, VERSION } from "@/components/settings/about";
 import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -41,8 +41,8 @@ const Settings = () => {
         <div className="flex items-center m-2 mb-2 gap-x-2">
           <img src="./logo.svg" alt="logo" className="w-8 h-8" />
           <div className="flex flex-col gap-y-0.5">
-            <h1 className="text-sm font-semibold">Keyviz</h1>
-            <p className="text-xs text-gray-400">v{VERSION}-beta</p>
+            <h1 className="text-sm font-semibold">{APP_NAME}</h1>
+            <p className="text-xs text-gray-400">v{VERSION}</p>
           </div>
         </div>
         {sideBar.map((item) => (

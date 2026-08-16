@@ -1,6 +1,6 @@
 import { message } from "@tauri-apps/plugin-dialog";
 
-const ERROR_DIALOG_TITLE = "Keyviz";
+const ERROR_DIALOG_TITLE = "Keyviz Stream";
 const DEDUPE_MS = 2000;
 
 let lastText = "";

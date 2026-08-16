@@ -3,7 +3,7 @@
         "windows": [
             {
                 "label": "main",
-                "title": "Keyviz",
+                "title": "Keyviz Stream",
                 "alwaysOnTop": true,
                 "skipTaskbar": true,
                 "decorations": true,

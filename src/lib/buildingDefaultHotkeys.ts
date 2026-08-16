@@ -10,7 +10,7 @@ export const SET_CURSOR = "Cursor";
 export const SET_CHROME = "Chrome";
 export const SET_IE = "Internet Explorer";
 export const SET_EXPLORER = "File Explorer";
-export const SET_KEYVIZ = "Keyviz";
+export const SET_KEYVIZ = "Keyviz Stream";
 
 const GROUP_CLIPBOARD = "Clipboard";
 const GROUP_FILE = "File";
@@ -33,7 +33,7 @@ const GROUP_TABS = "Tabs";
 const GROUP_PAGE = "Page";
 const GROUP_LIBRARY = "Library";
 const GROUP_FILES = "Files";
-const GROUP_KEYVIZ = "Keyviz";
+const GROUP_KEYVIZ = "Keyviz Stream";
 
 /**
  * Builds one starter label with a stable id.
@@ -1304,14 +1304,14 @@ const RAW_DEFAULT_HOTKEY_LABELS: HotkeyLabel[] = [
     SET_KEYVIZ,
     "Toggle overlay",
     "Shift+F10",
-    "Show or hide Keyviz. Change this in General if you remapped it.",
+    "Show or hide Keyviz Stream. Change this in General if you remapped it.",
     GROUP_KEYVIZ,
   ),
   buildingDefaultLabel(
     SET_KEYVIZ,
     "Open settings",
     "Ctrl+Alt+Q",
-    "Show or hide Keyviz settings",
+    "Show or hide Keyviz Stream settings",
     GROUP_KEYVIZ,
   ),
   buildingDefaultLabel(

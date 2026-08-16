@@ -33,7 +33,7 @@ export const normalizingProgramName = (value: string) =>
     ?.replace(/\.exe$/i, "") ?? "";
 
 /**
- * True when this process is the Keyviz overlay or settings window.
+ * True when this process is the Keyviz Stream overlay or settings window.
  */
 export const checkingKeyvizProcess = (processName: string) =>
   normalizingProgramName(processName).includes(KEYVIZ_PROCESS);
