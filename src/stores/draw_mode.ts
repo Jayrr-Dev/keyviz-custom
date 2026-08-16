@@ -8,15 +8,29 @@ export const DRAW_MODE_CLEAR_EVENT = "draw-mode-clear";
 
 export const DEFAULT_DRAW_COLOR = "#ef4444";
 export const DEFAULT_STROKE_WIDTH = 4;
-/** Freehand ink. Type places text. Highlight is a square-nib marker. Shape tools drag from start to end. */
+/** Toolbar swatches. Alt+1..Alt+7 match this list in order. */
+export const DRAW_INK_COLORS = [
+  "#ef4444",
+  "#f59e0b",
+  "#22c55e",
+  "#3b82f6",
+  "#fafafa",
+  "#737373",
+  "#000000",
+] as const;
+/** Freehand ink. Move drags existing marks. Type places text. Highlight is a square-nib marker. Shape tools drag from start to end. */
 export type DrawInkTool =
   | "pen"
+  | "move"
   | "type"
   | "highlight"
   | "arrow"
   | "square"
   | "circle";
 export const DEFAULT_DRAW_TOOL: DrawInkTool = "pen";
+export const DRAW_HOTKEY_EVENT = "draw-hotkey";
+/** Stroke widths shown on the toolbar. Alt+R cycles these. */
+export const DRAW_STROKE_WIDTHS = [2, 4, 8] as const;
 export const MIN_STROKE_WIDTH = 2;
 export const MAX_STROKE_WIDTH = 24;
 /** Filled highlight stays readable over the screen without blocking it. */
@@ -43,6 +57,7 @@ interface DrawModeActions {
   setClickMode: (clickMode: boolean) => void;
   setDrawTool: (drawTool: DrawInkTool) => void;
   setColor: (color: string) => void;
+  togglingDrawColor: (swatch: string) => void;
   setStrokeWidth: (strokeWidth: number) => void;
   setStrokeLifetimeSec: (strokeLifetimeSec: number) => void;
   setShowHotkeyHint: (showHotkeyHint: boolean) => void;
@@ -64,6 +79,10 @@ const createDrawModeStore = createSyncedStore<DrawModeStore>(
     setClickMode: (clickMode) => set({ clickMode }),
     setDrawTool: (drawTool) => set({ drawTool, clickMode: false }),
     setColor: (color) => set({ color }),
+    togglingDrawColor: (swatch) =>
+      set((state) => ({
+        color: state.color === swatch ? DEFAULT_DRAW_COLOR : swatch,
+      })),
     setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
     setStrokeLifetimeSec: (strokeLifetimeSec) => set({ strokeLifetimeSec }),
     setShowHotkeyHint: (showHotkeyHint) => set({ showHotkeyHint }),

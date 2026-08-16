@@ -156,8 +156,21 @@ pub fn config_window(window: &tauri::WebviewWindow) {
 }
 
 /**
+ * Project root for a cargo-built exe at …/src-tauri/target/{debug|release}/keyviz.exe.
+ */
+fn reading_dev_project_root(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let root = exe.ancestors().nth(4)?;
+    if root.join("package.json").is_file() && root.join("src-tauri").is_dir() {
+        Some(root.to_path_buf())
+    } else {
+        None
+    }
+}
+
+/**
  * Starts a new Keyviz process after this one exits.
- * A short delay avoids the single-instance plugin blocking the relaunch.
+ * Dev builds need `npx tauri dev` so Vite comes back on localhost:1420.
+ * Packaged builds only relaunch the exe.
  */
 pub fn restarting_app() {
     let Ok(exe) = std::env::current_exe() else {
@@ -173,8 +186,26 @@ pub fn restarting_app() {
 
         let raw = exe.to_string_lossy();
         let path = raw.strip_prefix(r"\\?\").unwrap_or(&raw).replace('"', "");
-        // raw_arg keeps the line verbatim. Normal args escape quotes as \" ,
-        // which cmd.exe reads as a literal backslash instead of a quote.
+        let exe_path = std::path::Path::new(&path);
+        let is_cargo_build = path.contains(r"\target\debug\")
+            || path.contains(r"\target\release\");
+
+        if is_cargo_build {
+            if let Some(root) = reading_dev_project_root(exe_path) {
+                let root = root.to_string_lossy().replace('"', "");
+                // Wait for this process to die, then relaunch the full Vite + Tauri stack.
+                let command = format!(
+                    "/C ping 127.0.0.1 -n 3 >nul & cd /d \"{root}\" & start \"Keyviz\" cmd /k \"npx tauri dev\""
+                );
+                let _ = std::process::Command::new("cmd")
+                    .raw_arg(command)
+                    .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+                    .spawn();
+                std::process::exit(0);
+            }
+        }
+
+        // Packaged build: relaunch the exe only.
         let _ = std::process::Command::new("cmd")
             .raw_arg(format!(
                 "/C ping 127.0.0.1 -n 2 >nul & start \"\" \"{path}\""

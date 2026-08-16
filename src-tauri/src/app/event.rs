@@ -10,6 +10,7 @@ use crate::app::window::{
 };
 
 const DRAW_TYPE_EVENT: &str = "draw-type-input";
+const DRAW_HOTKEY_EVENT: &str = "draw-hotkey";
 const SHIFT_KEYS: [&str; 2] = ["ShiftLeft", "ShiftRight"];
 
 const SHORTCUT_CTRL_KEYS: [&str; 2] = ["ControlLeft", "ControlRight"];
@@ -19,6 +20,82 @@ const DRAW_MODE_KEY: &str = "KeyD";
 const DRAW_EXIT_KEY: &str = "Escape";
 /// Two toggles closer than this come from one keypress, so the second is dropped.
 const DRAW_TOGGLE_DEBOUNCE: Duration = Duration::from_millis(250);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawHotkey {
+    pub tool: Option<String>,
+    pub color_index: Option<usize>,
+    #[serde(default)]
+    pub stroke_cycle: bool,
+    #[serde(default)]
+    pub click_mode_toggle: bool,
+}
+
+/**
+ * Alt (without Ctrl) tool and color shortcuts while draw mode is on.
+ */
+fn reading_draw_hotkey(key_name: &str, pressed: &[String]) -> Option<DrawHotkey> {
+    let has_alt = pressed
+        .iter()
+        .any(|name| SHORTCUT_ALT_KEYS.contains(&name.as_str()));
+    let has_ctrl = pressed
+        .iter()
+        .any(|name| SHORTCUT_CTRL_KEYS.contains(&name.as_str()));
+    if !has_alt || has_ctrl {
+        return None;
+    }
+    let tool = match key_name {
+        "KeyX" => Some("move"),
+        "KeyD" => Some("pen"),
+        "KeyT" => Some("type"),
+        "KeyH" => Some("highlight"),
+        "KeyA" => Some("arrow"),
+        "KeyS" => Some("square"),
+        "KeyC" => Some("circle"),
+        _ => None,
+    };
+    if let Some(tool) = tool {
+        return Some(DrawHotkey {
+            tool: Some(tool.to_string()),
+            color_index: None,
+            stroke_cycle: false,
+            click_mode_toggle: false,
+        });
+    }
+    if key_name == "KeyR" {
+        return Some(DrawHotkey {
+            tool: None,
+            color_index: None,
+            stroke_cycle: true,
+            click_mode_toggle: false,
+        });
+    }
+    if key_name == "KeyQ" {
+        return Some(DrawHotkey {
+            tool: None,
+            color_index: None,
+            stroke_cycle: false,
+            click_mode_toggle: true,
+        });
+    }
+    let color_index = match key_name {
+        "Num1" | "Kp1" => Some(0),
+        "Num2" | "Kp2" => Some(1),
+        "Num3" | "Kp3" => Some(2),
+        "Num4" | "Kp4" => Some(3),
+        "Num5" | "Kp5" => Some(4),
+        "Num6" | "Kp6" => Some(5),
+        "Num7" | "Kp7" => Some(6),
+        _ => None,
+    }?;
+    Some(DrawHotkey {
+        tool: None,
+        color_index: Some(color_index),
+        stroke_cycle: false,
+        click_mode_toggle: false,
+    })
+}
 
 /**
  * Fires Ctrl+Alt shortcuts once per hold. Latch clears as soon as the combo
@@ -252,6 +329,7 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
             let mut already_pressed = false;
             let mut key_releases: Option<Vec<String>> = None;
             let mut typed_input: Option<TypedInput> = None;
+            let mut draw_hotkey: Option<DrawHotkey> = None;
             let mut swallow_keys = false;
             let monitor_position;
 
@@ -273,7 +351,26 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                         app_state.pressed_keys.push(key_name.clone());
                     }
 
-                    if app_state.draw_typing {
+                    if !already_pressed && app_state.draw_mode {
+                        if let Some(hotkey) =
+                            reading_draw_hotkey(&key_name, &app_state.pressed_keys)
+                        {
+                            if hotkey.click_mode_toggle {
+                                // Frontend applies the toggle; clear typing either way.
+                                app_state.draw_typing = false;
+                            } else if hotkey
+                                .tool
+                                .as_deref()
+                                .is_some_and(|tool| tool != "type")
+                            {
+                                app_state.draw_typing = false;
+                            }
+                            draw_hotkey = Some(hotkey);
+                            swallow_keys = true;
+                        }
+                    }
+
+                    if draw_hotkey.is_none() && app_state.draw_typing {
                         swallow_keys = true;
                         if !already_pressed {
                             typed_input =
@@ -320,6 +417,11 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
                     if app_state.draw_typing {
                         swallow_keys = true;
                     }
+                    if app_state.draw_mode
+                        && reading_draw_hotkey(&key_name, &app_state.pressed_keys).is_some()
+                    {
+                        swallow_keys = true;
+                    }
                     app_state.pressed_keys.retain(|k| k != &key_name);
                     clearing_shortcut_latches(&mut app_state);
                 } else if let EventType::MouseMove { x, y } = event.event_type {
@@ -342,6 +444,9 @@ pub fn start_listener(app_handle: AppHandle, toggle_menu_item: MenuItem<Wry>) {
             }
             if pointer_sync {
                 syncing_overlay_pointer(&app_handle);
+            }
+            if let Some(hotkey) = draw_hotkey {
+                let _ = app_handle.emit(DRAW_HOTKEY_EVENT, hotkey);
             }
             if let Some(typed) = typed_input {
                 let _ = app_handle.emit(DRAW_TYPE_EVENT, typed);

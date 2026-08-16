@@ -4,7 +4,11 @@ import { MouseOverlay } from "@/components/mouse-overlay";
 import { RenderingDrawCanvas } from "@/components/renderingDrawCanvas";
 import { ForegroundApp } from "@/lib/matchingForegroundProgram";
 import {
+  DRAW_HOTKEY_EVENT,
+  DRAW_INK_COLORS,
   DRAW_MODE_STORE,
+  DRAW_STROKE_WIDTHS,
+  DrawInkTool,
   DrawModeStore,
   useDrawMode,
 } from "@/stores/draw_mode";
@@ -72,6 +76,47 @@ export function Visualization() {
       }),
       listen<boolean>("draw-click-mode", (event) => {
         useDrawMode.setState({ clickMode: event.payload });
+      }),
+      listen<{
+        tool?: string;
+        colorIndex?: number;
+        strokeCycle?: boolean;
+        clickModeToggle?: boolean;
+      }>(DRAW_HOTKEY_EVENT, (event) => {
+        const { tool, colorIndex, strokeCycle, clickModeToggle } =
+          event.payload;
+        if (tool) {
+          useDrawMode.getState().setDrawTool(tool as DrawInkTool);
+          invoke("set_draw_click_mode", { enabled: false }).catch(
+            () => undefined,
+          );
+          if (tool !== "type") {
+            invoke("set_draw_typing", { enabled: false }).catch(
+              () => undefined,
+            );
+          }
+        }
+        if (typeof colorIndex === "number") {
+          const next = DRAW_INK_COLORS[colorIndex];
+          if (next) useDrawMode.getState().togglingDrawColor(next);
+        }
+        if (strokeCycle) {
+          const widths = DRAW_STROKE_WIDTHS;
+          const current = useDrawMode.getState().strokeWidth;
+          const index = widths.findIndex((width) => width === current);
+          const next = widths[(index + 1) % widths.length] ?? widths[0];
+          useDrawMode.getState().setStrokeWidth(next);
+        }
+        if (clickModeToggle) {
+          const next = !useDrawMode.getState().clickMode;
+          useDrawMode.getState().setClickMode(next);
+          invoke("set_draw_click_mode", { enabled: next }).catch(
+            () => undefined,
+          );
+          invoke("set_draw_typing", { enabled: false }).catch(
+            () => undefined,
+          );
+        }
       }),
       listenForUpdates<DrawModeStore>(DRAW_MODE_STORE, useDrawMode.setState),
     ];

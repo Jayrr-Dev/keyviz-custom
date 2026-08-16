@@ -1,11 +1,14 @@
 import { Separator } from "@/components/ui/separator";
 import {
   DRAW_MODE_CLEAR_EVENT,
+  DRAW_INK_COLORS,
+  DRAW_STROKE_WIDTHS,
   DrawInkTool,
   HOTKEY_HINT_HIDE_MS,
   useDrawMode,
 } from "@/stores/draw_mode";
 import {
+  ArrowAllDirectionIcon,
   ArrowUpRight01Icon,
   Circle,
   Cursor01Icon,
@@ -18,20 +21,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-const DRAW_HINT = "Hold right-click to erase. Escape or Ctrl+Alt+D to exit";
-const CLICK_HINT = "Click mode. Drawings stay. Press Draw to ink again";
+const DRAW_HINT =
+  "Alt+X/D/T/H/A/S/C · Alt+R size · Alt+Q click · Alt+1-7 color";
+const CLICK_HINT = "Click mode. Drawings stay. Alt+Q or Draw to ink again";
 
-const DRAW_COLORS = [
-  "#ef4444",
-  "#f59e0b",
-  "#22c55e",
-  "#3b82f6",
-  "#fafafa",
-  "#737373",
-  "#000000",
-];
+const DRAW_COLORS = [...DRAW_INK_COLORS];
 
-const DRAW_WIDTHS = [2, 4, 8];
+const DRAW_WIDTHS = [...DRAW_STROKE_WIDTHS];
 
 /** Single row that never wraps, so the window size stays stable. */
 const TOOLBAR_SHELL =
@@ -64,6 +60,7 @@ const DRAW_INK_TOOLS: {
   label: string;
   icon: typeof Pen01Icon | null;
 }[] = [
+  { id: "move", label: "Move", icon: ArrowAllDirectionIcon },
   { id: "pen", label: "Pen", icon: Pen01Icon },
   { id: "type", label: "Type", icon: TextFontIcon },
   { id: "highlight", label: "Highlight", icon: HighlighterIcon },
@@ -105,7 +102,7 @@ export const RenderingDrawToolbar = () => {
   const strokeWidth = useDrawMode((state) => state.strokeWidth);
   const clickMode = useDrawMode((state) => state.clickMode);
   const drawTool = useDrawMode((state) => state.drawTool);
-  const setColor = useDrawMode((state) => state.setColor);
+  const togglingDrawColor = useDrawMode((state) => state.togglingDrawColor);
   const setStrokeWidth = useDrawMode((state) => state.setStrokeWidth);
   const setClickMode = useDrawMode((state) => state.setClickMode);
   const setDrawTool = useDrawMode((state) => state.setDrawTool);
@@ -203,7 +200,7 @@ export const RenderingDrawToolbar = () => {
             key={swatch}
             type="button"
             aria-label={`Ink ${swatch}`}
-            onClick={() => setColor(swatch)}
+            onClick={() => togglingDrawColor(swatch)}
             className={
               color === swatch
                 ? "size-5 rounded-full ring-2 ring-white ring-offset-2 ring-offset-neutral-900"

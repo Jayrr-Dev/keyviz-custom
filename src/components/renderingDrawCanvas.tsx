@@ -10,12 +10,20 @@ import { listen } from "@tauri-apps/api/event";
 import { PointerEvent, useEffect, useRef, useState } from "react";
 
 const ERASE_BUTTON = 2;
+const LASER_BUTTON = 1;
+const RIGHT_BUTTON_MASK = 2;
+const MIDDLE_BUTTON_MASK = 4;
 const ERASE_RADIUS_PADDING = 10;
 const ERASE_STREAK_WIDTH_SCALE = 0.55;
 const ERASE_STREAK_EDGE_SCALE = 1.2;
 const ERASE_STREAK_MS = 520;
 const ERASE_STREAK_EDGE = "180, 180, 186";
 const ERASE_STREAK_CORE = "255, 255, 255";
+const LASER_STREAK_GLOW = "255, 16, 16";
+const LASER_STREAK_EDGE = "255, 48, 32";
+const LASER_STREAK_CORE = "255, 236, 236";
+const LASER_GLOW_WIDTH_SCALE = 2.8;
+const LASER_SHADOW_BLUR = 22;
 const ERASE_MIN_POINT_GAP = 2;
 const ERASE_STEP_GAP = 6;
 const STROKE_FADE_MS = 320;
@@ -30,6 +38,18 @@ const TEXT_CHAR_WIDTH = 0.62;
 const TEXT_INPUT_MIN_WIDTH = 160;
 const TEXT_INPUT_PADDING = 4;
 const DRAW_TYPE_EVENT = "draw-type-input";
+const MOVE_HIT_PADDING = 14;
+const SHAPE_KINDS = new Set<DrawInkTool>(["arrow", "square", "circle"]);
+const CANVAS_BASE_CLASS = "absolute inset-0 h-full w-full";
+const DRAW_TOOL_CURSOR: Record<DrawInkTool, string> = {
+  move: "cursor-move",
+  pen: "cursor-crosshair",
+  type: "cursor-text",
+  highlight: "cursor-cell",
+  arrow: "cursor-crosshair",
+  square: "cursor-crosshair",
+  circle: "cursor-crosshair",
+};
 
 interface DrawPoint {
   x: number;
@@ -45,6 +65,11 @@ interface DrawStroke {
   finishedAt: number | null;
 }
 
+interface MoveSession {
+  index: number;
+  last: DrawPoint;
+}
+
 interface TypeDraft {
   x: number;
   y: number;
@@ -56,7 +81,7 @@ interface TypedInput {
   value: string;
 }
 
-interface EraseTrailPoint extends DrawPoint {
+interface StreakTrailPoint extends DrawPoint {
   bornAt: number;
 }
 
@@ -319,7 +344,7 @@ const paintingStrokes = (
       : stroke.width;
     context.lineCap = isHighlight ? "square" : "round";
     context.lineJoin = isHighlight ? "miter" : "round";
-    if (stroke.kind && stroke.kind !== "pen" && stroke.kind !== "highlight") {
+    if (SHAPE_KINDS.has(stroke.kind)) {
       strokingShape(context, stroke);
     } else {
       context.beginPath();
@@ -383,11 +408,41 @@ const strokingSmoothedPath = (
 };
 
 /**
+ * Topmost stroke under the pointer, for Move.
+ */
+const findingStrokeAtPoint = (
+  strokes: DrawStroke[],
+  point: DrawPoint,
+): number => {
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    if (hittingStroke(strokes[index], point, MOVE_HIT_PADDING)) {
+      return index;
+    }
+  }
+  return -1;
+};
+
+/**
+ * Shifts every point on a stroke by the same delta.
+ */
+const offsettingStroke = (
+  stroke: DrawStroke,
+  deltaX: number,
+  deltaY: number,
+): DrawStroke => ({
+  ...stroke,
+  points: stroke.points.map((point) => ({
+    x: point.x + deltaX,
+    y: point.y + deltaY,
+  })),
+});
+
+/**
  * Soft grey-white wipe drawn as a single fading ribbon.
  */
 const paintingEraseTrail = (
   context: CanvasRenderingContext2D,
-  points: EraseTrailPoint[],
+  points: StreakTrailPoint[],
   width: number,
   held: boolean,
 ) => {
@@ -409,17 +464,52 @@ const paintingEraseTrail = (
 };
 
 /**
+ * Same ribbon as the eraser, with a red bloom so it reads as a laser.
+ */
+const paintingLaserTrail = (
+  context: CanvasRenderingContext2D,
+  points: StreakTrailPoint[],
+  width: number,
+  held: boolean,
+) => {
+  if (points.length < 2) return;
+  const now = performance.now();
+  const newest = points[points.length - 1];
+  const alpha = held
+    ? 1
+    : Math.max(0, 1 - (now - newest.bornAt) / ERASE_STREAK_MS);
+  if (alpha <= 0) return;
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.shadowColor = `rgba(${LASER_STREAK_GLOW}, ${0.95 * alpha})`;
+  context.shadowBlur = LASER_SHADOW_BLUR;
+  context.strokeStyle = `rgba(${LASER_STREAK_GLOW}, ${0.32 * alpha})`;
+  context.lineWidth = width * LASER_GLOW_WIDTH_SCALE;
+  strokingSmoothedPath(context, points);
+  context.shadowBlur = LASER_SHADOW_BLUR * 0.45;
+  context.strokeStyle = `rgba(${LASER_STREAK_EDGE}, ${0.75 * alpha})`;
+  context.lineWidth = width * ERASE_STREAK_EDGE_SCALE;
+  strokingSmoothedPath(context, points);
+  context.shadowBlur = 0;
+  context.strokeStyle = `rgba(${LASER_STREAK_CORE}, ${0.95 * alpha})`;
+  context.lineWidth = width;
+  strokingSmoothedPath(context, points);
+  context.restore();
+};
+
+/**
  * Evenly spaced points from the last trail sample to the pointer.
  */
 const fillingEraseSteps = (
   from: DrawPoint,
   to: DrawPoint,
   bornAt: number,
-): EraseTrailPoint[] => {
+): StreakTrailPoint[] => {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
   if (distance < ERASE_MIN_POINT_GAP) return [];
   const steps = Math.max(1, Math.ceil(distance / ERASE_STEP_GAP));
-  const next: EraseTrailPoint[] = [];
+  const next: StreakTrailPoint[] = [];
   for (let index = 1; index <= steps; index += 1) {
     const amount = index / steps;
     next.push({
@@ -448,8 +538,11 @@ export const RenderingDrawCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<DrawStroke[]>([]);
   const currentRef = useRef<DrawStroke | null>(null);
+  const moveRef = useRef<MoveSession | null>(null);
   const erasingRef = useRef(false);
-  const eraseTrailRef = useRef<EraseTrailPoint[]>([]);
+  const laseringRef = useRef(false);
+  const eraseTrailRef = useRef<StreakTrailPoint[]>([]);
+  const laserTrailRef = useRef<StreakTrailPoint[]>([]);
   const eraseFrameRef = useRef<number | null>(null);
   const strokeLifetimeRef = useRef(strokeLifetimeSec);
   strokeLifetimeRef.current = strokeLifetimeSec;
@@ -468,6 +561,12 @@ export const RenderingDrawCanvas = () => {
       eraseTrailRef.current,
       Math.max(2, strokeWidth * ERASE_STREAK_WIDTH_SCALE),
       erasingRef.current,
+    );
+    paintingLaserTrail(
+      context,
+      laserTrailRef.current,
+      Math.max(2, strokeWidth * ERASE_STREAK_WIDTH_SCALE),
+      laseringRef.current,
     );
   };
 
@@ -497,10 +596,14 @@ export const RenderingDrawCanvas = () => {
       eraseTrailRef.current = eraseTrailRef.current.filter(
         (point) => now - point.bornAt < ERASE_STREAK_MS,
       );
+      laserTrailRef.current = laserTrailRef.current.filter(
+        (point) => now - point.bornAt < ERASE_STREAK_MS,
+      );
       const inkStillTicking = droppingExpiredStrokes();
       paintingCanvas();
       const keepGoing =
         eraseTrailRef.current.length > 0 ||
+        laserTrailRef.current.length > 0 ||
         (inkStillTicking &&
           strokesRef.current.some((stroke) => stroke.finishedAt != null));
       if (keepGoing) {
@@ -529,7 +632,11 @@ export const RenderingDrawCanvas = () => {
     const unlisten = listen(DRAW_MODE_CLEAR_EVENT, () => {
       strokesRef.current = [];
       currentRef.current = null;
+      moveRef.current = null;
       eraseTrailRef.current = [];
+      laserTrailRef.current = [];
+      erasingRef.current = false;
+      laseringRef.current = false;
       typeDraftRef.current = null;
       setTypeDraft(null);
       invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
@@ -551,7 +658,11 @@ export const RenderingDrawCanvas = () => {
     if (enabled || !wasEnabled) return;
     strokesRef.current = [];
     currentRef.current = null;
+    moveRef.current = null;
     eraseTrailRef.current = [];
+    laserTrailRef.current = [];
+    erasingRef.current = false;
+    laseringRef.current = false;
     typeDraftRef.current = null;
     setTypeDraft(null);
     invoke("set_draw_typing", { enabled: false }).catch(() => undefined);
@@ -592,6 +703,22 @@ export const RenderingDrawCanvas = () => {
     for (const step of added) {
       erasingAtPoint(step);
     }
+    paintingCanvas();
+    schedulingCanvasTick();
+  };
+
+  /**
+   * Adds a fading red laser streak without touching ink.
+   */
+  const pointingLaserAtPoint = (point: DrawPoint) => {
+    const bornAt = performance.now();
+    const trail = laserTrailRef.current;
+    const last = trail[trail.length - 1];
+    const added = last
+      ? fillingEraseSteps(last, point, bornAt)
+      : [{ ...point, bornAt }];
+    if (added.length === 0) return;
+    laserTrailRef.current = [...trail, ...added];
     paintingCanvas();
     schedulingCanvasTick();
   };
@@ -691,16 +818,45 @@ export const RenderingDrawCanvas = () => {
     if (event.button === ERASE_BUTTON) {
       committingTypeDraft(typeDraftRef.current);
       currentRef.current = null;
+      moveRef.current = null;
+      laseringRef.current = false;
       erasingRef.current = true;
       wipingAtPoint(readingCanvasPoint(event));
+      return;
+    }
+    if (event.button === LASER_BUTTON) {
+      committingTypeDraft(typeDraftRef.current);
+      currentRef.current = null;
+      moveRef.current = null;
+      erasingRef.current = false;
+      laseringRef.current = true;
+      laserTrailRef.current = [];
+      pointingLaserAtPoint(readingCanvasPoint(event));
       return;
     }
     if (drawTool === "type") {
       startingTypeDraft(readingCanvasPoint(event));
       return;
     }
+    if (drawTool === "move") {
+      committingTypeDraft(typeDraftRef.current);
+      currentRef.current = null;
+      const point = readingCanvasPoint(event);
+      const index = findingStrokeAtPoint(strokesRef.current, point);
+      if (index < 0) {
+        moveRef.current = null;
+        return;
+      }
+      event.currentTarget.setPointerCapture(event.pointerId);
+      erasingRef.current = false;
+      laseringRef.current = false;
+      moveRef.current = { index, last: point };
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     erasingRef.current = false;
+    laseringRef.current = false;
+    moveRef.current = null;
     currentRef.current = {
       kind: drawTool,
       color,
@@ -712,10 +868,44 @@ export const RenderingDrawCanvas = () => {
   };
 
   const movingStroke = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (erasingRef.current || (event.buttons & 2) === 2) {
+    if (
+      erasingRef.current ||
+      (event.buttons & RIGHT_BUTTON_MASK) === RIGHT_BUTTON_MASK
+    ) {
       currentRef.current = null;
+      moveRef.current = null;
+      laseringRef.current = false;
       erasingRef.current = true;
       wipingAtPoint(readingCanvasPoint(event));
+      return;
+    }
+    if (
+      laseringRef.current ||
+      (event.buttons & MIDDLE_BUTTON_MASK) === MIDDLE_BUTTON_MASK
+    ) {
+      currentRef.current = null;
+      moveRef.current = null;
+      erasingRef.current = false;
+      laseringRef.current = true;
+      pointingLaserAtPoint(readingCanvasPoint(event));
+      return;
+    }
+    if (moveRef.current) {
+      const point = readingCanvasPoint(event);
+      const session = moveRef.current;
+      const deltaX = point.x - session.last.x;
+      const deltaY = point.y - session.last.y;
+      if (deltaX === 0 && deltaY === 0) return;
+      const strokes = strokesRef.current.slice();
+      const target = strokes[session.index];
+      if (!target) {
+        moveRef.current = null;
+        return;
+      }
+      strokes[session.index] = offsettingStroke(target, deltaX, deltaY);
+      strokesRef.current = strokes;
+      moveRef.current = { index: session.index, last: point };
+      paintingCanvas();
       return;
     }
     if (!currentRef.current || currentRef.current.kind === "type") return;
@@ -735,6 +925,20 @@ export const RenderingDrawCanvas = () => {
     if (event.button === ERASE_BUTTON || erasingRef.current) {
       erasingRef.current = false;
       currentRef.current = null;
+      moveRef.current = null;
+      paintingCanvas();
+      return;
+    }
+    if (event.button === LASER_BUTTON || laseringRef.current) {
+      laseringRef.current = false;
+      currentRef.current = null;
+      moveRef.current = null;
+      paintingCanvas();
+      schedulingCanvasTick();
+      return;
+    }
+    if (moveRef.current) {
+      moveRef.current = null;
       paintingCanvas();
       return;
     }
@@ -768,7 +972,7 @@ export const RenderingDrawCanvas = () => {
     >
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full"
+        className={`${CANVAS_BASE_CLASS} ${DRAW_TOOL_CURSOR[drawTool]}`}
         onPointerDown={startingStroke}
         onPointerMove={movingStroke}
         onPointerUp={endingStroke}
