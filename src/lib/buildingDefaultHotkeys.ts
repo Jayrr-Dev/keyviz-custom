@@ -187,6 +187,13 @@ const RAW_DEFAULT_HOTKEY_LABELS: HotkeyLabel[] = [
   ),
   buildingDefaultLabel(
     DEFAULT_HOTKEY_SET,
+    "Screenshot",
+    "Win+Shift+S",
+    "Open the snipping overlay",
+    GROUP_WINDOW,
+  ),
+  buildingDefaultLabel(
+    DEFAULT_HOTKEY_SET,
     "Capitalize",
     "Shift+(char)",
     "{char} will be capitalized",
@@ -919,6 +926,18 @@ const RAW_DEFAULT_HOTKEY_LABELS: HotkeyLabel[] = [
     "Ctrl+L",
     "Open chat or ask about the selection",
   ),
+  buildingDefaultLabel(
+    SET_CURSOR,
+    "New chat tab",
+    "Ctrl+T",
+    "Open a new chat tab",
+  ),
+  buildingDefaultLabel(
+    SET_CURSOR,
+    "Full screen",
+    "Ctrl+Shift+M",
+    "Toggle full screen",
+  ),
   buildingDefaultLabel(SET_CURSOR, "Agent", "Ctrl+I", "Open Agent or Composer"),
   buildingDefaultLabel(
     SET_CURSOR,
@@ -1345,6 +1364,7 @@ const FUNCTION_GROUP_BY_KEY: Record<string, string> = {
   [groupKey(DEFAULT_HOTKEY_SET, "Ctrl+W")]: GROUP_FILE,
   [groupKey(DEFAULT_HOTKEY_SET, "Alt+F4")]: GROUP_WINDOW,
   [groupKey(DEFAULT_HOTKEY_SET, "Alt+Tab")]: GROUP_WINDOW,
+  [groupKey(DEFAULT_HOTKEY_SET, "Win+Shift+S")]: GROUP_WINDOW,
   [groupKey(DEFAULT_HOTKEY_SET, "F5")]: GROUP_NAVIGATION,
   [groupKey(DEFAULT_HOTKEY_SET, "Ctrl+L")]: GROUP_NAVIGATION,
   [groupKey(DEFAULT_HOTKEY_SET, "Shift+(char)")]: GROUP_TYPING,
@@ -1456,12 +1476,14 @@ const FUNCTION_GROUP_BY_KEY: Record<string, string> = {
   [groupKey(SET_CURSOR, "Alt+Down")]: GROUP_EDITING,
   [groupKey(SET_CURSOR, "Ctrl+W")]: GROUP_EDITING,
   [groupKey(SET_CURSOR, "Ctrl+B")]: GROUP_VIEW,
+  [groupKey(SET_CURSOR, "Ctrl+Shift+M")]: GROUP_VIEW,
   [groupKey(SET_CURSOR, "Ctrl+`")]: GROUP_VIEW,
   [groupKey(SET_CURSOR, "Ctrl+Shift+`")]: GROUP_VIEW,
   [groupKey(SET_CURSOR, "Ctrl+\\")]: GROUP_VIEW,
   [groupKey(SET_CURSOR, "Ctrl+Shift+E")]: GROUP_VIEW,
   [groupKey(SET_CURSOR, "Ctrl+K")]: GROUP_AI,
   [groupKey(SET_CURSOR, "Ctrl+L")]: GROUP_AI,
+  [groupKey(SET_CURSOR, "Ctrl+T")]: GROUP_AI,
   [groupKey(SET_CURSOR, "Ctrl+I")]: GROUP_AI,
   [groupKey(SET_CURSOR, "Ctrl+E")]: GROUP_AI,
   [groupKey(SET_CURSOR, "Ctrl+.")]: GROUP_AI,
@@ -1545,6 +1567,9 @@ export const DEFAULT_HOTKEY_LABELS: HotkeyLabel[] =
 const LEGACY_DRAW_COMBO = "ctrl+alt+y";
 const DRAW_MODE_COMBO = "Ctrl+Alt+D";
 const DRAW_MODE_LABEL = "Draw mode";
+const LEGACY_CURSOR_FULLSCREEN_COMBO = "f11";
+const CURSOR_FULLSCREEN_COMBO = "Ctrl+Shift+M";
+const CURSOR_FULLSCREEN_LABEL = "Full screen";
 
 export const mergingDefaultHotkeys = (
   sets: HotkeySet[],
@@ -1566,7 +1591,11 @@ export const mergingDefaultHotkeys = (
       label.name === DRAW_MODE_LABEL &&
       label.combo.toLowerCase() === LEGACY_DRAW_COMBO
         ? DRAW_MODE_COMBO
-        : label.combo,
+        : label.set === SET_CURSOR &&
+            label.name === CURSOR_FULLSCREEN_LABEL &&
+            label.combo.toLowerCase() === LEGACY_CURSOR_FULLSCREEN_COMBO
+          ? CURSOR_FULLSCREEN_COMBO
+          : label.combo,
   }));
   const seen = new Set(nextLabels.map(labelingKey));
   for (const label of DEFAULT_HOTKEY_LABELS) {
