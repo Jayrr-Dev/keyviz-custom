@@ -1,4 +1,5 @@
 import { showingWindowsError } from "@/lib/showingWindowsError";
+import { invoke } from "@tauri-apps/api/core";
 import { Component, ReactNode } from "react";
 
 interface CatchingAppErrorsProps {
@@ -24,6 +25,7 @@ export class CatchingAppErrors extends Component<
 
   componentDidCatch(error: Error) {
     void showingWindowsError(error);
+    invoke("set_draw_mode", { enabled: false }).catch(() => undefined);
   }
 
   render() {

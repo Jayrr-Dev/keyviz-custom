@@ -10,12 +10,13 @@ use tauri::{
 
 mod app;
 use app::commands::{
-    log, reading_foreground_app, set_draw_mode, set_main_window_monitor, set_toggle_shortcut,
+    log, reading_foreground_app, set_draw_click_mode, set_draw_mode, set_main_window_monitor,
+    set_toggle_shortcut,
     spanning_all_monitors,
 };
 use app::event::start_listener;
 use app::state::AppState;
-use app::window::{config_window, toggling_settings_window};
+use app::window::{applying_draw_mode, config_window, toggling_settings_window};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,13 +42,18 @@ pub fn run() {
             // tray actions
             let toggle_item = MenuItem::with_id(app, "toggle", "Stop", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let exit_draw_item =
+                MenuItem::with_id(app, "exit-draw", "Exit draw mode", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
             // start global input listener
             start_listener(app_handle.clone(), toggle_item.clone());
 
             // setup tray menu
-            let menu = Menu::with_items(app, &[&toggle_item, &settings_item, &quit_item])?;
+            let menu = Menu::with_items(
+                app,
+                &[&toggle_item, &settings_item, &exit_draw_item, &quit_item],
+            )?;
             let _ = TrayIconBuilder::with_id("keyviz-tray")
                 .icon(Image::from(include_image!("icons/tray.png")))
                 .menu(&menu)
@@ -60,6 +66,13 @@ pub fn run() {
                     }
                     "settings" => {
                         toggling_settings_window(app);
+                    }
+                    "exit-draw" => {
+                        let state = app.state::<Mutex<AppState>>();
+                        let mut app_state = state.lock().unwrap();
+                        app_state.draw_mode = false;
+                        app_state.draw_click_mode = false;
+                        applying_draw_mode(app, false);
                     }
                     "quit" => std::process::exit(0),
                     _ => println!("um... what?"),
@@ -86,6 +99,7 @@ pub fn run() {
             log,
             set_toggle_shortcut,
             set_draw_mode,
+            set_draw_click_mode,
             set_main_window_monitor,
             reading_foreground_app
         ])

@@ -43,6 +43,7 @@ export function Visualization() {
   const onEvent = useKeyEvent((state) => state.onEvent);
   const tick = useKeyEvent((state) => state.tick);
   const drawMode = useDrawMode((state) => state.enabled);
+  const clickMode = useDrawMode((state) => state.clickMode);
 
   const [isListening, setIsListening] = useState(true);
   const [keyLayout, setKeyLayout] = useState<OverlayLayout | null>(null);
@@ -53,7 +54,8 @@ export function Visualization() {
   useEffect(() => {
     const unlistenPromises = [
       listen<EventPayload>("input-event", (event) => {
-        if (useDrawMode.getState().enabled) return;
+        const draw = useDrawMode.getState();
+        if (draw.enabled && !draw.clickMode) return;
         onEvent(event.payload);
       }),
       listenForUpdates<KeyEventStore>(KEY_EVENT_STORE, useKeyEvent.setState),
@@ -65,7 +67,10 @@ export function Visualization() {
         setIsListening(event.payload),
       ),
       listen<boolean>("draw-mode-toggle", (event) => {
-        useDrawMode.setState({ enabled: event.payload });
+        useDrawMode.setState({ enabled: event.payload, clickMode: false });
+      }),
+      listen<boolean>("draw-click-mode", (event) => {
+        useDrawMode.setState({ clickMode: event.payload });
       }),
       listenForUpdates<DrawModeStore>(DRAW_MODE_STORE, useDrawMode.setState),
     ];
@@ -110,7 +115,7 @@ export function Visualization() {
 
   return (
     <div className="w-screen h-screen relative overflow-hidden">
-      {isListening && !drawMode ? (
+      {isListening && (!drawMode || clickMode) ? (
         <>
           <MouseOverlay />
           <KeyOverlay screenStyle={keyStyle} foregroundApp={foregroundApp} />

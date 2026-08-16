@@ -1317,8 +1317,8 @@ const RAW_DEFAULT_HOTKEY_LABELS: HotkeyLabel[] = [
   buildingDefaultLabel(
     SET_KEYVIZ,
     "Draw mode",
-    "Ctrl+Alt+Y",
-    "Draw on the screen or leave draw mode",
+    "Ctrl+Alt+D",
+    "Draw on the screen. Escape or Ctrl+Alt+D leaves.",
     GROUP_KEYVIZ,
   ),
 ];
@@ -1527,7 +1527,7 @@ const FUNCTION_GROUP_BY_KEY: Record<string, string> = {
 
   [groupKey(SET_KEYVIZ, "Shift+F10")]: GROUP_KEYVIZ,
   [groupKey(SET_KEYVIZ, "Ctrl+Alt+Q")]: GROUP_KEYVIZ,
-  [groupKey(SET_KEYVIZ, "Ctrl+Alt+Y")]: GROUP_KEYVIZ,
+  [groupKey(SET_KEYVIZ, "Ctrl+Alt+D")]: GROUP_KEYVIZ,
 };
 
 /**
@@ -1542,6 +1542,10 @@ export const DEFAULT_HOTKEY_LABELS: HotkeyLabel[] =
 /**
  * Adds missing starter sets and labels. Backfills empty function groups.
  */
+const LEGACY_DRAW_COMBO = "ctrl+alt+y";
+const DRAW_MODE_COMBO = "Ctrl+Alt+D";
+const DRAW_MODE_LABEL = "Draw mode";
+
 export const mergingDefaultHotkeys = (
   sets: HotkeySet[],
   labels: HotkeyLabel[],
@@ -1557,6 +1561,12 @@ export const mergingDefaultHotkeys = (
     ...label,
     description: label.description ?? "",
     group: label.group ?? "",
+    combo:
+      label.set === SET_KEYVIZ &&
+      label.name === DRAW_MODE_LABEL &&
+      label.combo.toLowerCase() === LEGACY_DRAW_COMBO
+        ? DRAW_MODE_COMBO
+        : label.combo,
   }));
   const seen = new Set(nextLabels.map(labelingKey));
   for (const label of DEFAULT_HOTKEY_LABELS) {

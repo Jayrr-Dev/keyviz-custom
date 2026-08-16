@@ -33,7 +33,20 @@ pub fn set_draw_mode(app: tauri::AppHandle, enabled: bool) {
     let state = app.state::<Mutex<AppState>>();
     let mut app_state = state.lock().unwrap();
     app_state.draw_mode = enabled;
+    app_state.draw_click_mode = false;
     crate::app::window::applying_draw_mode(&app, enabled);
+}
+
+/// Click mode keeps drawings and lets the mouse through to other apps.
+#[tauri::command]
+pub fn set_draw_click_mode(app: tauri::AppHandle, enabled: bool) {
+    let state = app.state::<Mutex<AppState>>();
+    let mut app_state = state.lock().unwrap();
+    if !app_state.draw_mode {
+        return;
+    }
+    app_state.draw_click_mode = enabled;
+    crate::app::window::applying_draw_click_mode(&app, enabled);
 }
 
 /// Spans the overlay across every display. `monitor_name` only places the keycaps.
@@ -43,9 +56,13 @@ pub fn set_main_window_monitor(
     monitor_name: Option<String>,
 ) -> Option<OverlayLayout> {
     let window = app.get_webview_window("main")?;
-    let state = app.state::<Mutex<AppState>>();
-    let mut app_state = state.lock().unwrap();
-    spanning_all_monitors(&window, monitor_name.as_deref(), &mut app_state)
+    let layout = {
+        let state = app.state::<Mutex<AppState>>();
+        let mut app_state = state.lock().unwrap();
+        spanning_all_monitors(&window, monitor_name.as_deref(), &mut app_state)
+    };
+    crate::app::window::raising_draw_toolbar(&app);
+    layout
 }
 
 /// Virtual desktop origin and size in the same space as the mouse hook.
